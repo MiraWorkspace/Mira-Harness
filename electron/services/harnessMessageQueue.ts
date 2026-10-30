@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { WebContents } from 'electron'
+import { isHarnessUserQueueItem } from '../../src/config/harness'
 import type {
   HarnessMessageAttachment,
   HarnessMessageQueueSnapshot,
@@ -174,15 +175,18 @@ export class HarnessMessageQueue {
       }, attachments, scope, fingerprint)
     }
     if (state.guidingItemId && (options.delivery || options.pausedQueueDecision)) throw new Error('待发送消息正在提升，请稍后重试')
-    const held = !!state.paused && state.items.length > 0
+    const userItemIds = state.items.filter(entry => isHarnessUserQueueItem(entry.item)).map(entry => entry.item.id)
+    const held = !!state.paused && userItemIds.length > 0
     if (held || options.pausedQueueDecision) {
       if (this.deps.blocked(input.sessionId)) throw new Error('请先处理当前任务的确认')
-      const ids = state.items.map(entry => entry.item.id)
+      const ids = userItemIds
       if (!held || !options.pausedQueueDecision || state.revision !== options.expectedQueueRevision || ids.length !== options.expectedQueueItemIds?.length || ids.some((id, index) => id !== options.expectedQueueItemIds?.[index])) {
         return { confirmationRequired: true, queue: this.get(input.sessionId) }
       }
     }
-    if ((!options.delivery || options.delivery === 'queue') && !options.pausedQueueDecision) return this.enqueue(sender, input, attachments, scope, fingerprint)
+    // A hidden paused result must not hold new user input behind an invisible queue.
+    const onlySystemResultsPaused = state.paused && state.items.length > 0 && !held && !this.deps.isRunning(input.sessionId)
+    if ((!options.delivery || options.delivery === 'queue') && !options.pausedQueueDecision && !onlySystemResultsPaused) return this.enqueue(sender, input, attachments, scope, fingerprint)
     if (this.deps.blocked(input.sessionId)) throw new Error('请先处理当前任务的确认')
     const frozen = structuredClone({ input, attachments, scope, options })
     const entry: Entry = { item: { ...frozen.input, id: randomUUID(), createdAt: Date.now() }, attachments: frozen.attachments, scope: frozen.scope, fingerprint, sender }
@@ -280,7 +284,7 @@ export class HarnessMessageQueue {
     if (state.promotion || state.guidingItemId) throw new Error('待发送消息正在提升，请稍后重试')
     const entry = state.items.find(value => value.item.id === itemId)
     if (!entry) throw new Error('待发送消息已开始或已撤回')
-    if (entry.item.operation === 'command-notification') throw new Error('后台结果回报按顺序处理，不能立即发送')
+    if (!isHarnessUserQueueItem(entry.item)) throw new Error('后台结果回报按顺序处理，不能立即发送')
     return this.promote(sessionId, entry, expectedRunId)
   }
 

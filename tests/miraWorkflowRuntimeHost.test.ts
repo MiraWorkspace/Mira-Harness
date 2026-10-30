@@ -171,6 +171,7 @@ describe('actual production workflow model, tools and permission integration', (
       view.runtime.notifyMiraFlowCompletion(view.sender, identity.sessionId, identity.runId, view.selection, 'default')
       await vi.waitFor(() => expect(view.runtime.getMessageQueue(identity.sessionId).paused).toBe('failed'))
       expect(view.runtime.getMessageQueue(identity.sessionId).items).toHaveLength(1)
+      expect(view.runtime.getMessageQueue(identity.sessionId).items[0]?.operation).toBe('workflow-notification')
       expect(view.runtime.getSession(identity.sessionId).messages.filter(message => message.content.includes('<mira-workflow-result'))).toHaveLength(0)
       expect(view.requests).toHaveLength(0)
       if (failure === 'provider configuration') view.database.models.save(provider)

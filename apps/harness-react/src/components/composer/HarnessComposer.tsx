@@ -10,7 +10,7 @@ import * as Popover from '@radix-ui/react-popover'
 import * as Tooltip from '@radix-ui/react-tooltip'
 import * as Dialog from '@radix-ui/react-dialog'
 import { ArrowUp, Blocks, Bot, Brain, Check, ChevronDown, Circle, CircleAlert, FileText, Folder, Hand, Lightbulb, LoaderCircle, MessageSquare, Minimize2, Package, Paperclip, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck, Square, Goal, Workflow, WandSparkles, Wrench, X } from 'lucide-react'
-import { DEFAULT_PERMISSION_CONFIG, isModelProviderAvailable, shouldSendWithShortcut, type HarnessContextUsage, type HarnessFileReference, type HarnessMessageSubmissionOptions, type HarnessQueuedMessage, type HarnessSideConversationInput, type HarnessSubtaskRole, type ModelSelection, type PermissionConfig, type PermissionMode, type SendShortcut } from '../../../../../src/config/harness'
+import { DEFAULT_PERMISSION_CONFIG, isHarnessUserQueueItem, isModelProviderAvailable, shouldSendWithShortcut, type HarnessContextUsage, type HarnessFileReference, type HarnessMessageSubmissionOptions, type HarnessQueuedMessage, type HarnessSideConversationInput, type HarnessSubtaskRole, type ModelSelection, type PermissionConfig, type PermissionMode, type SendShortcut } from '../../../../../src/config/harness'
 import { MIRA_SUBTASK_AGENTS } from '../../../../../src/config/miraAgents'
 import { resolveAvailablePermission } from '../../../../../src/config/harnessPermissions'
 import { parseMiraGoalCommand } from '../../../../../src/config/miraGoals'
@@ -1392,9 +1392,10 @@ export const HarnessComposer = forwardRef<HarnessComposerHandle, HarnessComposer
             setSubmission(id, undefined)
             if (!result.sessionLoading && result.session?.id === id && activeRef.current) {
               const queue = result.queue
-              if (queue?.sessionId === id && queue.items.length) {
+              const userItems = queue?.items.filter(isHarnessUserQueueItem) ?? []
+              if (queue?.sessionId === id && userItems.length) {
                 closeSuggestions(); setModeOpen(false); setModelOpen(false); setReasoningOpen(false); setSendHintOpen(false)
-                setQueueConfirmation({ ownerId: id, revision: queue.revision, itemIds: queue.items.map(item => item.id), ...(submittedOptions?.delivery === 'immediate' ? { delivery: 'immediate' as const } : {}) })
+                setQueueConfirmation({ ownerId: id, revision: queue.revision, itemIds: userItems.map(item => item.id), ...(submittedOptions?.delivery === 'immediate' ? { delivery: 'immediate' as const } : {}) })
               } else { setQueueConfirmation(undefined); setComposerError('队列状态已变化，请重新发送') }
             }
             try { await persistDrafts() }

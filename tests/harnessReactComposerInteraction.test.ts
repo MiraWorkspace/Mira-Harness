@@ -2291,6 +2291,17 @@ describe('shipped Mira Composer contextual interactions', () => {
     expect(view.api.send).toHaveBeenCalledTimes(1); expect(view.api.withdrawMessage).not.toHaveBeenCalled(); expect(view.api.resumeMessageQueue).not.toHaveBeenCalled()
   })
 
+  it('excludes internal results from paused queue confirmation counts and discard identities', async () => {
+    const view = fixture({ queue: true, submissionOptions: true }); await view.drain()
+    const notice = { ...queued(), id: 'system-result', operation: 'command-notification' as const }
+    view.state.queue = { sessionId: 'current', revision: 4, items: [notice, queued()], paused: 'stopped' }; view.render(); await view.drain()
+    await view.type('新消息'); view.api.send.mockResolvedValueOnce('confirmation-required'); await view.key('Enter')
+    expect(view.dialogProps().open).toBe(true)
+    expect(view.props((_, element) => element.type === Dialog.Description).children).toContain(1)
+    await view.confirm('discard')
+    expect(view.api.send.mock.calls[1]?.[5]).toMatchObject({ pausedQueueDecision: 'discard', expectedQueueItemIds: [queued().id] })
+  })
+
   it.each(['retain', 'discard'] as const)('confirms paused queue %s atomically using latest draft and model with frozen queue identities', async decision => {
     const view = fixture({ queue: true, submissionOptions: true }); await view.drain()
     view.state.queue = { sessionId: 'current', revision: 4, items: [queued(), queued('queued-2')], paused: 'stopped' }; view.render(); await view.drain()

@@ -486,7 +486,7 @@ export interface HarnessMessageAttachment extends HarnessFileReference {
 
 export interface HarnessQueuedMessage {
   hasStructuredContext?: boolean
-  operation?: 'context-compaction' | 'command-notification'
+  operation?: 'context-compaction' | 'command-notification' | 'workflow-notification'
   backgroundCommands?: HarnessMessage['backgroundCommands']
   id: string
   submissionId: string
@@ -505,6 +505,9 @@ export interface HarnessQueuedMessage {
   requestedDelivery?: 'guide'
   fallbackReason?: HarnessGuideFallbackReason
 }
+
+/** Host results share execution scheduling; only user input and requested compaction belong in the Composer queue. */
+export function isHarnessUserQueueItem(item: HarnessQueuedMessage) { return !item.operation || item.operation === 'context-compaction' }
 
 export type HarnessGuideFallbackReason = 'attachments' | 'skills' | 'plugins' | 'planning' | 'model-mismatch' | 'permission-mismatch' | 'run-unavailable' | 'confirmation' | 'run-ended'
 

@@ -3,7 +3,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ArrowUpFromLine, ChevronDown, ChevronUp, CircleAlert, GripVertical, LoaderCircle, Paperclip, Pencil, Play, RotateCw, Trash2, Undo2 } from 'lucide-react'
-import type { HarnessGuideFallbackReason, HarnessMessageQueueSnapshot, HarnessQueuedMessage } from '../../../../../src/config/harness'
+import { isHarnessUserQueueItem, type HarnessGuideFallbackReason, type HarnessMessageQueueSnapshot, type HarnessQueuedMessage } from '../../../../../src/config/harness'
 import { ComposerControlHint } from './ComposerControlHint'
 
 export interface HarnessMessageQueueProps {
@@ -47,14 +47,13 @@ const guideFallbackLabels: Record<HarnessGuideFallbackReason, string> = {
 
 function MiraQueueRow({ item, index, sortable, pending, promoting, sendNowDisabled, disabled, editDisabled, onEdit, onDelete, onSendNow }: { item: HarnessQueuedMessage; index: number; sortable?: boolean; pending: boolean; promoting: boolean; sendNowDisabled: boolean; disabled: boolean; editDisabled: boolean; onEdit: HarnessMessageQueueProps['onEdit']; onDelete: HarnessMessageQueueProps['onDelete']; onSendNow?: HarnessMessageQueueProps['onSendNow'] }) {
   const locked = disabled || pending || promoting
-  const commandNotice = item.operation === 'command-notification'
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !sortable || locked })
   return <li ref={setNodeRef} className={`mira-message-queue__row${isDragging ? ' mira-message-queue__row--dragging' : ''}`} data-queue-item={item.id} data-queue-promoting={promoting || undefined} style={{ transform: CSS.Transform.toString(transform ? { ...transform, scaleX: 1, scaleY: 1 } : null), transition, zIndex: isDragging ? 10 : undefined }}>
     {sortable !== undefined && <ComposerControlHint title="拖动排序"><button ref={setActivatorNodeRef} type="button" className="mira-message-queue__drag" disabled={!sortable || locked} {...attributes} {...listeners} aria-label={`排序待发送消息 ${index + 1}`}><GripVertical size={14} /></button></ComposerControlHint>}
-    <span className="mira-message-queue__number">{index + 1}</span><span className="mira-message-queue__text" title={commandNotice ? '等待当前任务结束后回报后台命令结果' : item.operation === 'context-compaction' ? '压缩上下文，保留最近对话和完整历史' : item.text}>{commandNotice ? `后台命令结果回报 · ${item.backgroundCommands?.length ?? 0} 条` : item.operation === 'context-compaction' ? '压缩上下文' : item.text}</span>
+    <span className="mira-message-queue__number">{index + 1}</span><span className="mira-message-queue__text" title={item.operation === 'context-compaction' ? '压缩上下文，保留最近对话和完整历史' : item.text}>{item.operation === 'context-compaction' ? '压缩上下文' : item.text}</span>
     {item.requestedDelivery === 'guide' && item.fallbackReason && <span className="mira-message-queue__fallback" title={guideFallbackLabels[item.fallbackReason]}>{guideFallbackLabels[item.fallbackReason]}</span>}
     {item.references.length > 0 && <span className="mira-message-queue__references" title={`${item.references.length} 个文件`}><Paperclip size={12} />{item.references.length}</span>}
-    {onSendNow && !commandNotice && <ComposerControlHint title={promoting ? '正在立即发送' : '立即发送'}><button type="button" aria-label={`立即发送待发送消息 ${index + 1}`} aria-busy={promoting || undefined} disabled={locked || sendNowDisabled} onClick={() => void onSendNow(item.id)}>{promoting ? <LoaderCircle size={14} className="animate-spin" /> : <ArrowUpFromLine size={14} />}</button></ComposerControlHint>}
+    {onSendNow && <ComposerControlHint title={promoting ? '正在立即发送' : '立即发送'}><button type="button" aria-label={`立即发送待发送消息 ${index + 1}`} aria-busy={promoting || undefined} disabled={locked || sendNowDisabled} onClick={() => void onSendNow(item.id)}>{promoting ? <LoaderCircle size={14} className="animate-spin" /> : <ArrowUpFromLine size={14} />}</button></ComposerControlHint>}
     {!item.operation && <ComposerControlHint title={editDisabled ? '输入为空时可撤回编辑' : '撤回到输入框'}><button type="button" aria-label={`编辑待发送消息 ${index + 1}`} disabled={locked || editDisabled} onClick={() => void onEdit(item.id)}>{pending ? <LoaderCircle size={14} className="animate-spin" /> : <Pencil size={14} />}</button></ComposerControlHint>}
     <ComposerControlHint title="删除待发送消息"><button type="button" aria-label={`删除待发送消息 ${index + 1}`} disabled={locked} onClick={() => void onDelete(item.id)}><Trash2 size={14} /></button></ComposerControlHint>
   </li>
@@ -63,7 +62,7 @@ function MiraQueueRow({ item, index, sortable, pending, promoting, sendNowDisabl
 export function HarnessMessageQueue({ queue, recoveries, pendingItems, resumePending, editDisabled, disabled, recoveryBlocked, confirmationPending, error, onEdit, onDelete, onRestore, onResume, onConfirmation, onRetrySave, onMove, onSendNow, reorderPending, sendNowPendingItems = [] }: HarnessMessageQueueProps) {
   const [expanded, setExpanded] = useState(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
-  const items = (queue?.items ?? []).filter(item => item.delivery !== 'guide')
+  const items = (queue?.items ?? []).filter(item => isHarnessUserQueueItem(item) && item.delivery !== 'guide')
   if (!items.length && !recoveries.length && !error) return null
   const rows = expanded ? items : items.slice(0, 5)
   const promotionPending = Boolean(queue?.promotingItemId || sendNowPendingItems.length)

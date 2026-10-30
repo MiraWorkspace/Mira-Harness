@@ -29,13 +29,43 @@ function mount(count = 7) {
 }
 
 describe('Mira queue panel controls', () => {
-  it('labels host command-result batches without editable output or a preempting send-now action', () => {
+  it.each((['command-notification', 'workflow-notification'] as const).flatMap(operation => ([undefined, 'stopped', 'failed'] as const).map(paused => ({ operation, paused }))))('keeps $operation out of the user queue when $paused', ({ operation, paused }) => {
     const view = mount(1)
-    view.props.queue!.items[0] = { ...item(0), text: 'internal result payload', operation: 'command-notification', backgroundCommands: [{ runId: 'run', toolId: 'one' }, { runId: 'run', toolId: 'two' }] }
+    view.props.queue!.items[0] = { ...item(0), text: 'internal result payload', operation, backgroundCommands: [{ runId: 'run', toolId: 'one' }, { runId: 'run', toolId: 'two' }] }
+    view.props.queue!.paused = paused
+    const snapshot = structuredClone(view.props.queue)
     view.props.onSendNow = vi.fn(async () => undefined); view.render()
-    expect(view.nodes(props => props.className === 'mira-message-queue__text')[0].children).toBe('后台命令结果回报 · 2 条')
-    expect(view.button('编辑待发送消息 1')).toBeUndefined()
-    expect(view.button('立即发送待发送消息 1')).toBeUndefined()
+    expect(view.tree()).toBeNull()
+    expect(view.props.queue).toEqual(snapshot)
+  })
+  it('counts, numbers and expands only user entries while preserving internal scheduling records', () => {
+    const view = mount(7)
+    view.props.queue!.items.splice(0, 0, { ...item(8), operation: 'command-notification' })
+    view.props.queue!.items.splice(3, 0, { ...item(9), operation: 'command-notification' })
+    const snapshot = structuredClone(view.props.queue)
+    view.render()
+    expect(view.nodes(props => props.className === 'mira-message-queue__heading')[0].children).toContainEqual(expect.objectContaining({ props: { children: ['待发送 · ', 7] } }))
+    expect(view.nodes(props => props.className === 'mira-message-queue__number').map(props => props.children)).toEqual([1, 2, 3, 4, 5])
+    expect(view.nodes(props => Boolean(props['data-queue-item'])).map(props => props['data-queue-item'])).toEqual(['item-0', 'item-1', 'item-2', 'item-3', 'item-4'])
+    ;(view.nodes(props => props['aria-expanded'] === false)[0].onClick as () => void)(); view.render()
+    expect(view.nodes(props => Boolean(props['data-queue-item']))).toHaveLength(7)
+    ;(view.button('删除待发送消息 2').onClick as () => void)()
+    expect(view.props.onDelete).toHaveBeenCalledExactlyOnceWith('item-1')
+    expect(view.props.queue).toEqual(snapshot)
+  })
+  it('uses visible user entries as drag anchors when internal results are interleaved', () => {
+    const view = mount(3)
+    view.props.queue!.items.splice(1, 0, { ...item(9), operation: 'command-notification' })
+    view.props.onMove = vi.fn(async () => undefined); view.render()
+    const dragEnd = view.nodes((_, type) => type === DndContext)[0].onDragEnd as (event: unknown) => void
+    dragEnd({ active: { id: 'item-0' }, over: { id: 'item-1' } })
+    expect(view.props.onMove).toHaveBeenLastCalledWith('item-0', 'item-2')
+    expect(view.nodes(props => /^排序待发送消息/.test(String(props['aria-label'])))).toHaveLength(3)
+  })
+  it('retains explicitly requested context compaction in the user queue', () => {
+    const view = mount(1)
+    view.props.queue!.items[0].operation = 'context-compaction'; view.render()
+    expect(view.nodes(props => props.className === 'mira-message-queue__text')[0].children).toBe('压缩上下文')
     expect(view.button('删除待发送消息 1')).toBeDefined()
   })
   it('keeps pending guides out of the future queue without deleting or reordering authoritative items', () => {
