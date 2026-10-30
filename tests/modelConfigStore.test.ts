@@ -100,6 +100,72 @@ describe('ModelConfigStore', () => {
     expect(store.getSecret(international.id)).toBe('international-key')
   })
 
+  it('reuses legacy built-in IDs and preserves configured connections and bindings across restarts', () => {
+    const { store, directory } = createStore()
+    const legacy = MODEL_PROVIDER_BUILTIN_INSTANCES.map(preset => store.save({
+      ...preset, id: `legacy-${preset.id}`, builtin: true, slug: preset.providerKey,
+      endpoint: `https://proxy.example/${preset.id}`, apiKey: `${preset.id}-key`,
+      models: [model(`${preset.id}-model`)], enabled: true,
+    }))
+    const bindings = { agentDefault: { providerId: legacy[0].id, modelId: legacy[0].models[0].id } }
+    store.saveBindings(bindings)
+    store.ensureBuiltinInstances()
+    const reopened = new ModelConfigStore(directory)
+    reopened.ensureBuiltinInstances()
+    expect(new Set(reopened.list().map(item => item.id))).toEqual(new Set(legacy.map(item => item.id)))
+    for (const record of legacy) {
+      expect(reopened.get(record.id)).toEqual(record)
+      expect(reopened.getSecret(record.id)).toBe(`${record.id.replace('legacy-', '')}-key`)
+    }
+    expect(reopened.bindings()).toEqual(bindings)
+  })
+
+  it('removes the extra empty seeds created alongside legacy domestic and international defaults', () => {
+    const { store, directory } = createStore()
+    const legacy = MODEL_PROVIDER_BUILTIN_INSTANCES.map(preset => store.save({
+      ...preset, id: `legacy-${preset.id}`, builtin: true, slug: preset.providerKey, models: [], enabled: false,
+    }))
+    for (const preset of MODEL_PROVIDER_BUILTIN_INSTANCES) store.save({ ...preset, builtin: true, slug: preset.providerKey, models: [], enabled: false })
+    expect(store.list()).toHaveLength(8)
+    store.ensureBuiltinInstances()
+    const reopened = new ModelConfigStore(directory)
+    reopened.ensureBuiltinInstances()
+    expect(new Set(reopened.list().map(item => item.id))).toEqual(new Set(legacy.map(item => item.id)))
+    for (const record of legacy) expect(reopened.get(record.id)).toEqual(record)
+  })
+
+  it.each([false, true])('keeps configured defaults and removes only empty duplicates when fixed ID configured=%s', fixed => {
+    const { store } = createStore()
+    const preset = MODEL_PROVIDER_BUILTIN_INSTANCES[0]
+    const legacy = store.save({ ...preset, id: 'legacy-glm', builtin: true, models: [], enabled: false })
+    store.ensureBuiltinInstances()
+    const current = store.save({ ...preset, builtin: true, models: [], enabled: false })
+    const configured = store.save({ ...(fixed ? current : legacy), apiKeys: [{ id: 'saved', label: '备用', value: 'saved-key' }] })
+    store.ensureBuiltinInstances()
+    expect(store.list().filter(item => item.name === preset.name)).toEqual([configured])
+    expect(store.getApiKeys(configured.id)).toEqual([{ id: 'saved', label: '备用', value: 'saved-key' }])
+  })
+
+  it('preserves edited defaults, configured duplicates, bound IDs and manually created namesakes', () => {
+    const { store } = createStore()
+    const [domestic, international, kimi] = MODEL_PROVIDER_BUILTIN_INSTANCES
+    store.ensureBuiltinInstances()
+    const edited = store.save({ ...store.get(domestic.id)!, endpoint: 'https://proxy.example/v1' })
+    const emptyDuplicate = store.save({ ...domestic, id: 'old-empty', builtin: true, models: [], enabled: false })
+    const credential = store.save({ ...store.get(international.id)!, apiKey: 'current-key', models: [model('current')], enabled: true })
+    const oldCredential = store.save({ ...international, id: 'old-credential', builtin: true, apiKey: 'old-key', models: [model('old')], enabled: true })
+    const oldEmpty = store.save({ ...kimi, id: 'old-bound', builtin: true, models: [], enabled: false })
+    const bound = store.get(kimi.id)!
+    store.saveBindings({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' }, novelAuthoring: { providerId: bound.id, modelId: 'previous-model' } })
+    const manual = store.save({ ...domestic, id: 'manual', builtin: false, models: [], enabled: false })
+    store.ensureBuiltinInstances()
+    for (const record of [edited, credential, oldCredential, oldEmpty, bound, manual]) expect(store.get(record.id)).toEqual(record)
+    expect(store.get(emptyDuplicate.id)).toBeUndefined()
+    expect(store.getSecret(credential.id)).toBe('current-key')
+    expect(store.getSecret(oldCredential.id)).toBe('old-key')
+    expect(store.bindings()).toEqual({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' }, novelAuthoring: { providerId: bound.id, modelId: 'previous-model' } })
+  })
+
   it.each([false, true])('deletes a manual service with children=%s, its connections and role bindings', expanded => {
     const { store, directory } = createStore()
     const root = store.save({ providerKey: 'custom', slug: 'myProvider', builtin: true, serviceName: '我的服务商', name: '我的服务商', endpoint: 'https://example.com', apiKey: 'root-key', models: [model('root-model')], enabled: true })

@@ -135,8 +135,17 @@ export class ModelConfigStore {
 
   ensureBuiltinInstances() {
     const document = this.readDocument(), now = Date.now()
+    const boundIds = new Set(Object.values(document.bindings).map(selection => selection?.providerId))
     for (const preset of MODEL_PROVIDER_BUILTIN_INSTANCES) {
-      if (!document.providers.some(item => item.id === preset.id)) document.providers.push({ id: preset.id, builtin: true, providerKey: preset.providerKey, slug: preset.providerKey, name: preset.name, endpoint: preset.endpoint, apiKey: '', apiKeys: [], authMode: 'api-key', protocol: 'openai-completions', models: [], enabled: false, createdAt: now, updatedAt: now })
+      const instances = document.providers.filter(item => item.id === preset.id
+        || item.builtin && serviceId(item) === preset.providerKey && item.name === preset.name)
+      const isEmptyDefault = (item: JsonProviderRecord) => item.builtin && item.name === preset.name
+        && item.endpoint === preset.endpoint && item.authMode === 'api-key' && modelProtocol(item.protocol) === 'openai-completions'
+        && !item.enabled && !item.apiKey && !recordApiKeys(item).length && !item.models.length && !boundIds.has(item.id)
+      // 旧版默认实例使用随机 ID；保留原连接身份，只移除升级时重复补建的空白项。
+      const existing = instances.find(item => !isEmptyDefault(item)) || instances.find(item => item.id !== preset.id) || instances[0]
+      if (existing) document.providers = document.providers.filter(item => !instances.includes(item) || item === existing || !isEmptyDefault(item))
+      else document.providers.push({ id: preset.id, builtin: true, providerKey: preset.providerKey, slug: preset.providerKey, name: preset.name, endpoint: preset.endpoint, apiKey: '', apiKeys: [], authMode: 'api-key', protocol: 'openai-completions', models: [], enabled: false, createdAt: now, updatedAt: now })
     }
     for (const key of ['glm', 'kimi'] as const) {
       const preset = MODEL_PROVIDER_BUILTIN_INSTANCES.find(item => item.providerKey === key)!

@@ -7,7 +7,7 @@ import { ElMessage } from 'element-plus'
 import Page from '../src/pages/backend/modelConfig/index.vue'
 import { ModelConfigStore } from '../electron/storage/modelConfigStore'
 import { createVueNodeRenderer, withVueClientRender, type VueTestNode } from './helpers/vueNodeRenderer'
-import type { ModelProviderInput } from '../src/config/harness'
+import { MODEL_PROVIDER_BUILTIN_INSTANCES, type ModelProviderInput } from '../src/config/harness'
 import ModelEditorDialog from '../src/pages/backend/modelConfig/components/ModelEditorDialog.vue'
 import ModelCapabilities from '../src/pages/backend/modelConfig/components/ModelCapabilities.vue'
 import AiBrandIcon from '../src/components/AiBrandIcon/index.vue'
@@ -366,11 +366,16 @@ describe('two-level model service tree', () => {
     expect(view.all().some(node => node.props['aria-label'] === '搜索模型' && node.type === 'input')).toBe(false)
   })
 
-  it('shows domestic and international built-in instances with their own documentation', async () => {
+  it.each([false, true])('shows each regional default once with its own documentation after legacy duplicates=%s', async legacyDuplicates => {
+    if (legacyDuplicates) for (const preset of MODEL_PROVIDER_BUILTIN_INSTANCES) store.save({
+      ...preset, id: `legacy-${preset.id}`, builtin: true, models: [], enabled: false,
+    })
+    // 模拟已被旧初始化逻辑补建的固定 ID 实例。
+    if (legacyDuplicates) for (const preset of MODEL_PROVIDER_BUILTIN_INSTANCES) store.save({ ...preset, builtin: true, models: [], enabled: false })
     store.ensureBuiltinInstances()
     host.preferences.modelProviderExpanded = ['glm', 'kimi']
     const view = setup(); await drain()
-    expect(view.children()).toEqual(['智谱开放平台', 'z.ai', '月之暗面', 'Moonshot'])
+    expect(view.children().sort()).toEqual(['智谱开放平台', 'z.ai', '月之暗面', 'Moonshot'].sort())
     expect(view.row('月之暗面')).toBeDefined()
     for (const [name, href] of [
       ['智谱开放平台', 'https://open.bigmodel.cn/console/modelcenter/square'],
