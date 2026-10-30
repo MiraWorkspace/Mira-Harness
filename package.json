@@ -1,15 +1,19 @@
 {
   "name": "mira-harness",
   "version": "0.0.10",
-  "description": "Mira Harness personal tool application shell",
+  "description": "Mira is a local-first personal AI desktop workbench for agent collaboration, workflow automation, and extensible tools.",
   "productName": "Mira",
   "type": "module",
   "license": "MIT",
   "keywords": [
-    "vue",
-    "platform",
-    "personal-tools",
-    "micro-frontend"
+    "ai-agent",
+    "desktop",
+    "local-first",
+    "workflow-automation",
+    "mcp",
+    "electron",
+    "react",
+    "vue"
   ],
   "scripts": {
     "dev": "electron-vite dev",
