@@ -326,6 +326,50 @@ describe('HarnessStore', () => {
     } finally { database?.close(); rmSync(root, { recursive: true, force: true }) }
   })
 
+  it('detaches a missing empty draft owner on startup without losing its identity or preferences', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mira-missing-draft-restart-'))
+    let database = new PlatformDatabase(root)
+    const key = 'first-party.mira-harness.harness-react-composer-drafts'
+    try {
+      const snapshot = { drafts: {}, fileDrafts: {}, permissions: { missing: 'auto-approve' }, draft: { id: 'restored', groupId: 'group', sessionId: 'missing' }, config: { projectId: 'project', planning: true } }
+      database.savePreference(key, snapshot)
+      database.savePreference('unrelated', { keep: true })
+      for (let restart = 0; restart < 2; restart++) {
+        database.close(); database = new PlatformDatabase(root)
+        expect(database.harness.listSessions()).toEqual([])
+        expect(database.getSnapshot().preferences[key]).toEqual({ ...snapshot, draft: { id: 'restored', groupId: 'group' }, permissions: { draft: 'auto-approve' } })
+        expect(database.getSnapshot().preferences.unrelated).toEqual({ keep: true })
+      }
+    } finally { database.close(); rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('retains existing prepared draft owners even though they are absent from the session list', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mira-existing-draft-restart-'))
+    let database = new PlatformDatabase(root)
+    const key = 'first-party.mira-harness.harness-react-composer-drafts'
+    try {
+      const prepared = database.harness.createSession(undefined, 'default', true)
+      const snapshot = { drafts: {}, fileDrafts: {}, permissions: { [prepared.id]: 'default' }, draft: { id: 'restored', sessionId: prepared.id } }
+      database.savePreference(key, snapshot)
+      database.close(); database = new PlatformDatabase(root)
+      expect(database.harness.listSessions()).toEqual([])
+      expect(database.harness.getSession(prepared.id).draftState).toBe('prepared')
+      expect(database.getSnapshot().preferences[key]).toEqual(snapshot)
+    } finally { database.close(); rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it.each(['drafts', 'fileDrafts', 'documents', 'recoveries', 'submissions'])('preserves missing-owner %s for explicit recovery instead of silently discarding user content', field => {
+    const root = mkdtempSync(join(tmpdir(), 'mira-missing-draft-content-'))
+    let database = new PlatformDatabase(root)
+    const key = 'first-party.mira-harness.harness-react-composer-drafts'
+    try {
+      const snapshot = { drafts: {}, fileDrafts: {}, draft: { id: 'restored', sessionId: 'missing' }, [field]: { missing: field === 'drafts' ? '保留的正文' : [{ keep: true }] } }
+      database.savePreference(key, snapshot)
+      database.close(); database = new PlatformDatabase(root)
+      expect(database.getSnapshot().preferences[key]).toEqual(snapshot)
+    } finally { database.close(); rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('searches the real visible message table, not titles only, and excludes hidden and archived content', async () => {
     const { root, database, store } = createStore()
     try {

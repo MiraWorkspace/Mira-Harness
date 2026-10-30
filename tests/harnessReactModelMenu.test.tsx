@@ -66,6 +66,7 @@ describe('Mira provider model menu', () => {
     const option = { ...models[0], modelName: '手动模型名称' }
     const view = await fixture([option]); await view.search('手动模型')
     expect(document.querySelector('[role="menuitemradio"]')?.textContent).toContain('手动模型名称')
+    expect(document.querySelector('[role="menuitemradio"] span[title]')?.getAttribute('title')).toBe('手动模型名称')
     await key(view.input, 'ArrowDown'); await key(document.activeElement as HTMLElement, 'Enter')
     expect(view.selected).toHaveBeenCalledExactlyOnceWith(option)
     expect(view.selected.mock.calls[0][0].modelId).toBe('b:c')

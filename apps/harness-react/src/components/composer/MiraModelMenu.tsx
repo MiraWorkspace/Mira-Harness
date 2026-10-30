@@ -67,7 +67,7 @@ export function MiraModelMenu({ open, ownerKey, models, selected, container, dis
       const model = models.find(item => modelKey(item) === value)
       if (model) onSelect(model)
     }}>{options.map(model => <DropdownMenu.RadioItem key={modelKey(model)} value={modelKey(model)} disabled={disabled} data-mira-model-row className="harness-composer__menu-item mira-model-menu__option">
-      <span title={model.modelId}><strong>{model.modelName || model.modelId}</strong>{showProvider && <small>{model.providerName}</small>}</span>
+      <span title={model.modelName || model.modelId}><strong>{model.modelName || model.modelId}</strong>{showProvider && <small>{model.providerName}</small>}</span>
       {model.multimodal && <Image size={14} aria-label="支持图片输入" className="mira-model-menu__capability" />}
       {model.reasoning && <Brain size={14} aria-label="支持推理" className="mira-model-menu__capability" />}
       <DropdownMenu.ItemIndicator className="harness-composer__check"><Check size={16} /></DropdownMenu.ItemIndicator>

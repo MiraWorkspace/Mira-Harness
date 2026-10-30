@@ -490,7 +490,6 @@ export function SessionSidebar({ state, controller, width, activeSessionId = sta
         : <MiraSidebarSection key="personal" sortable={sectionSortable} id="personal" title="个人工作区" open={Boolean(query) || (model.recent.length ? personalSectionOpen : emptyPersonalOpen)} disabled={!preferenceState.ready} onOpenChange={open => { if (!query) { setEmptyPersonalOpen(open); preferenceStore.change({ personalSectionOpen: open }) } }} action={<SidebarActionHint title="新建个人任务"><button type="button" className="mira-session-icon" aria-label="在个人工作区新建任务" onClick={onNewPersonalConversation || newTask}><MessageCirclePlus size={14} /></button></SidebarActionHint>}>{renderRows(ordered(model.recent.filter(matches)), showAllRecent || query ? model.recent.length : SESSION_LIMIT)}{!model.recent.length && !query && <p className="mira-session-hint">暂无个人任务</p>}{model.recent.length > SESSION_LIMIT && !query && <button type="button" className="mira-session-more" onClick={() => setShowAllRecent(value => !value)}>{showAllRecent ? '收起' : '显示更多'}</button>}</MiraSidebarSection>
       )}</SortableContext>}
       {query && !pinned.length && !attention.length && !running.length && !recent.length && !(view === 'group' && showDraft) && <p className="mira-session-hint">没有匹配的任务</p>}
-      {!query && !sessions.length && !(view === 'group' && showDraft) && <p className="mira-session-hint">新建任务后，对话会显示在这里。</p>}
       </>}
       {timeline && query && !pinned.length && !timelineSessions.length && <p className="mira-session-hint">没有匹配的任务</p>}
       </>

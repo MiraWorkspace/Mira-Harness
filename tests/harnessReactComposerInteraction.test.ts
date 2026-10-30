@@ -14,6 +14,7 @@ import { MiraBrowserContexts } from '../apps/harness-react/src/components/compos
 import { MiraPresentationContexts } from '../apps/harness-react/src/components/composer/MiraPresentationContexts'
 import { parseMiraPresentationReferences, type MiraPresentationReference } from '../src/config/miraPresentation'
 import { MiraModelMenu } from '../apps/harness-react/src/components/composer/MiraModelMenu'
+import { ComposerControlHint } from '../apps/harness-react/src/components/composer/ComposerControlHint'
 import { MiraContextUsage } from '../apps/harness-react/src/components/composer/MiraContextUsage'
 import { miraBrowserPrompt } from '../apps/harness-react/src/lib/mira-browser-reference'
 import type { PilotController, PilotState } from '../apps/harness-react/src/state/pilot-state'
@@ -3297,6 +3298,16 @@ describe('shipped Mira Composer contextual interactions', () => {
     expect(view.api.send.mock.calls[0]?.[5]).toEqual({ permissionMode: 'auto-approve' })
     expect(view.api.setSessionPermission).not.toHaveBeenCalled()
     expect(view.api.setPreference).toHaveBeenCalledWith('harness-react-composer-drafts', expect.objectContaining({ permissions: { created: 'auto-approve' } }), true)
+  })
+
+  it.each([['DeepSeek V4.1 Flash', 'DeepSeek V4.1 Flash'], [undefined, 'model']])('uses model display name %s consistently in the button and hover hint', async (name, label) => {
+    const view = fixture(); await view.drain()
+    view.state.providers[0].models[0] = { ...view.state.providers[0].models[0], name }; view.render()
+    const hint = view.props((props, element) => element.type === ComposerControlHint && React.isValidElement<Record<string, unknown>>(props.children) && props.children.props['aria-label'] === '模型')
+    expect(hint.title).toBe(`Provider / ${label}`)
+    const trigger = view.props(props => props['aria-label'] === '模型')
+    expect((trigger.children as React.ReactElement<{ children: string }>[]).find(child => child.type === 'span')?.props.children).toBe(label)
+    expect(view.state.selection?.modelId).toBe('model')
   })
 
   it('uses the selected provider model for the next submission while retaining reasoning (legacy host)', async () => {

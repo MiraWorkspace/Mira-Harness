@@ -114,6 +114,7 @@ export class PlatformDatabase {
     this.goals.initialize()
     this.flowJournal.initialize()
     this.flowActors.initialize()
+    this.detachMissingEmptyHarnessDraft()
     // 选择附件会先创建会话；未发送的持久草稿仍需通过原会话恢复，不能当作旧空白会话清理。
     const roots = this.harnessDraftRoots()
     if (roots) {
@@ -121,6 +122,32 @@ export class PlatformDatabase {
       // 只在 Runtime 启动前回收：运行中的队列/未确认提交可能还没有写入持久草稿。
       this.harness.reclaimStagedAttachments(roots.references, roots.protectedOwners)
     }
+  }
+
+  private detachMissingEmptyHarnessDraft() {
+    const row = this.database.prepare('SELECT value FROM preferences WHERE key = ?').get(HARNESS_COMPOSER_PREFERENCE) as { value: string } | undefined
+    if (!row) return
+    const isObject = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value))
+    let value: unknown
+    try { value = JSON.parse(row.value) } catch { return }
+    if (!isObject(value) || !isObject(value.draft) || typeof value.draft.sessionId !== 'string') return
+    const owner = value.draft.sessionId
+    if (this.database.prepare('SELECT 1 FROM harness_session_state WHERE session_id = ?').get(owner)) return
+    // 只解绑无内容的失效草稿；有正文、附件或待确认提交的快照必须保留，不能静默丢弃。
+    if (Object.keys(value).some(key => !['drafts', 'fileDrafts', 'documents', 'permissions', 'recoveries', 'submissions', 'config', 'draft'].includes(key))) return
+    for (const field of ['drafts', 'fileDrafts', 'documents', 'recoveries', 'submissions']) {
+      const entries = value[field]
+      if (entries === undefined) continue
+      if (!isObject(entries)) return
+      const content = entries[owner]
+      if (content != null && content !== '' && !(Array.isArray(content) && !content.length)) return
+    }
+    delete value.draft.sessionId
+    if (isObject(value.permissions) && Object.prototype.hasOwnProperty.call(value.permissions, owner)) {
+      if (!Object.prototype.hasOwnProperty.call(value.permissions, 'draft')) value.permissions.draft = value.permissions[owner]
+      delete value.permissions[owner]
+    }
+    this.savePreference(HARNESS_COMPOSER_PREFERENCE, value)
   }
 
   harnessDiagnosticPaths(id: string): import('../../src/config/miraModelTrace').MiraTaskDiagnosticPaths {
