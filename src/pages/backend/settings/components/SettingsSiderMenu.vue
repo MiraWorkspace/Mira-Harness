@@ -149,12 +149,15 @@ function goToSection(path: string) {
   flex: 0 0 264px;
   flex-direction: column;
   gap: 16px;
-  padding: 48px 10px 12px;
+  padding: 12px 10px;
   background: var(--cp-bg-elevated);
   min-height: 0;
   overflow: hidden;
   position: relative;
   z-index: 1;
+}
+.settings-sidebar--macos-overlay {
+  padding-top: 48px;
 }
 .settings-menu-scroll {
   flex: 1;
