@@ -15,10 +15,6 @@
               <span>{{ app.code === 'main' ? 'Mira Harness' : app.name }}</span>
               <AppIcon v-if="currentAppCode === app.code" name="Check" />
             </button>
-            <button type="button" :class="{ 'is-current': currentAppCode === 'novel' }" @click="openLegacyNovel">
-              <AppIcon name="lucide:book-open" /><span>小说创作</span>
-              <AppIcon v-if="currentAppCode === 'novel'" name="Check" />
-            </button>
           </nav>
         </el-popover>
         <div v-if="showAppNavigation" class="mira-shell__navigation" role="group" aria-label="应用导航">
@@ -100,11 +96,6 @@ const currentAppName = computed(() => {
 function switchApp(code: string) {
   appMenuVisible.value = false
   void navigateToPath(router, getApplicationEntryPath(code))
-}
-
-function openLegacyNovel() {
-  appMenuVisible.value = false
-  void router.push('/novel')
 }
 
 function openSettings() {
