@@ -219,16 +219,14 @@ docs/                  能力说明与接口文档
 third-party-licenses/  第三方许可、通知与来源记录
 ```
 
-更详细的设计见[产品定位](PRODUCT.md)与 [React 工作台结构](apps/harness-react/README.md)。
-
 ## 数据与隐私
 
 - **保存在本机**：会话、配置、记忆和运行记录保存在用户目录下的 `.mira` 中，项目文件留在你选择的目录。
 - **只发给你配置的服务商**：调用在线模型时，任务相关的消息、附件内容或工具结果会随请求发送给对应服务商。只用本地 Ollama 时不经过外部模型服务。
 - **外部能力按需启用**：插件和 MCP 服务可能访问网络或其他应用，数据处理取决于你启用的工具。
-- **权限由你决定**：文件、命令和工具调用都经过权限策略与审批，具体边界见[文件访问说明](docs/MIRA_FILE_ACCESS.md)。
+- **权限由你决定**：文件、命令和工具调用都经过权限策略与审批。
 
-局域网远程对话默认关闭，启用后模型与执行能力仍在这台电脑上。请只在可信网络中使用，连接范围见[远程对话说明](docs/MIRA_LAN_REMOTE_IMPLEMENTATION.md)。
+局域网远程对话默认关闭，启用后模型与执行能力仍在这台电脑上。请只在可信网络中使用。
 
 ## 本地开发
 
@@ -314,16 +312,6 @@ npm run dev
 需要在 **系统设置 → 隐私与安全性** 中为 Mira 打开“辅助功能”和“屏幕录制”权限，然后重启应用。
 
 </details>
-
-## 文档
-
-| 主题 | 入口 |
-| --- | --- |
-| 产品与界面 | [产品定位](PRODUCT.md) · [界面规范](DESIGN.md) |
-| 工作台与应用接入 | [React 工作台结构](apps/harness-react/README.md) · [第一方 SDK](docs/MIRA_FIRST_PARTY_SDK_CONTRACT.md) |
-| 模型与文件 | [内置模型协议](docs/BUILTIN_MODEL_PROTOCOLS.md) · [文件访问](docs/MIRA_FILE_ACCESS.md) |
-| 工具与扩展 | [内置浏览器自动化](docs/MIRA_EMBEDDED_BROWSER_AUTOMATION.md) · [插件市场](docs/MIRA_PLUGIN_MARKETPLACE.md) |
-| 远程使用 | [局域网远程对话](docs/MIRA_LAN_REMOTE_IMPLEMENTATION.md) |
 
 ## 参与贡献
 
