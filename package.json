@@ -1,6 +1,6 @@
 {
   "name": "mira-harness",
-  "version": "0.0.10",
+  "version": "0.1.0-beta.1",
   "description": "Mira is a local-first personal AI desktop workbench for agent collaboration, workflow automation, and extensible tools.",
   "productName": "Mira",
   "type": "module",
