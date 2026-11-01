@@ -92,7 +92,9 @@
 
 在可信局域网内，用手机或其他电脑的浏览器继续项目对话，任务仍由桌面端执行。该功能默认关闭。
 
-<img src="docs/images/feature-lan-remote.png" width="720" alt="局域网远程对话" />
+<img src="docs/images/feature-lan-remote.png" width="720" alt="局域网连接说明面板（离线演示，服务未开启）" />
+
+*连接说明面板的离线演示，图中远程服务未开启。*
 
 ## 快速开始
 
