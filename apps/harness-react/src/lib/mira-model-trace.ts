@@ -29,18 +29,29 @@ export function miraTraceTextMatches(source: string, query: string): Array<{ sta
 }
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2) ?? ''
+function requestMessages(request: Record<string, unknown>): unknown[] | undefined {
+  const input = Array.isArray(request.messages) ? request.messages : request.input
+  return Array.isArray(input) ? input : typeof input === 'string' ? [{ role: 'user', content: input }] : undefined
+}
 
 export function miraTraceSections(record: MiraModelCall, inputIndexes?: readonly number[]): MiraTraceSection[] {
   const result: MiraTraceSection[] = []
   const add = (key: string, role: MiraTraceRole, title: string, content: unknown) => result.push({ id: `${record.id}:${key}`, role, title, text: text(content) })
   const request = object(record.request)
-  if (Array.isArray(request.messages)) (inputIndexes ?? request.messages.map((_, index) => index)).forEach(index => {
-    const message: unknown = (request.messages as unknown[])[index]
-    const value = object(message), role = value.role === 'developer' || value.role === 'system' ? 'system' : value.role === 'user' ? 'user' : value.role === 'tool' ? 'tool-result' : Array.isArray(value.tool_calls) && value.tool_calls.length ? 'tool-call' : 'assistant'
+  const { messages: _messages, input: _input, system, instructions, tools, ...options } = request
+  if (system) add('system', 'system', '系统指令 · 请求', system)
+  if (instructions) add('instructions', 'system', '系统指令 · 请求', instructions)
+  const messages = requestMessages(request) ?? []
+  for (const index of inputIndexes ?? messages.map((_, index) => index)) {
+    const message = messages[index], value = object(message)
+    const role = value.role === 'developer' || value.role === 'system' ? 'system'
+      : value.role === 'user' ? 'user'
+      : value.role === 'tool' || value.type === 'function_call_output' || value.type === 'custom_tool_call_output' ? 'tool-result'
+      : value.type === 'function_call' || value.type === 'custom_tool_call' || Array.isArray(value.tool_calls) && value.tool_calls.length ? 'tool-call'
+      : value.type === 'reasoning' ? 'reasoning' : 'assistant'
     add(`input:${index}`, role, `${miraTraceRole[role]} · 请求${typeof value.name === 'string' ? ` · ${value.name}` : ''}`, message)
-  })
-  if (request.tools) add('tools', 'options', '工具定义 · 请求', request.tools)
-  const { messages: _messages, tools: _tools, ...options } = request
+  }
+  if (tools) add('tools', 'options', '工具定义 · 请求', tools)
   if (Object.keys(options).length) add('options', 'options', '请求参数', options)
   const response = object(record.response)
   if (Array.isArray(response.content)) response.content.forEach((part: unknown, index) => {
@@ -68,14 +79,14 @@ export function miraTraceSummary(records: readonly MiraModelCall[]) {
 export function miraTraceCalls(records: readonly MiraModelCall[], fullRequests = false) {
   const contexts = new Map<string, { messages: string[]; hasOutput: boolean }>()
   return records.map(record => {
-    const raw = object(record.request).messages
-    const messages: unknown[] = Array.isArray(raw) ? raw : []
+    const raw = requestMessages(object(record.request))
+    const messages = raw ?? []
     const key = record.source === 'main' ? `main:${record.sessionId}` : record.source === 'subagent' && record.agentSessionId ? `agent:${record.agentSessionId}` : undefined
     const prefix = key ? contexts.get(key) : undefined
     const serialized = key ? messages.map(message => text(message)) : []
     const continued = prefix && messages.length >= prefix.messages.length && prefix.messages.every((message, index) => message === serialized[index])
     const indexes = messages.flatMap((message, index) => continued && (index < prefix.messages.length || prefix.hasOutput && object(message).role === 'assistant') ? [] : [index])
-    if (key && Array.isArray(raw)) contexts.set(key, { messages: serialized, hasOutput: Array.isArray(object(record.response).content) && (object(record.response).content as unknown[]).length > 0 })
+    if (key && raw) contexts.set(key, { messages: serialized, hasOutput: Array.isArray(object(record.response).content) && (object(record.response).content as unknown[]).length > 0 })
     return { record, sections: miraTraceSections(record, fullRequests ? undefined : indexes), omittedInputs: fullRequests ? 0 : messages.length - indexes.length }
   })
 }

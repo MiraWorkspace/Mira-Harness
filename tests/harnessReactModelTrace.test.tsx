@@ -43,6 +43,36 @@ describe('Mira model trajectory resource', () => {
     expect(sections.find(section => section.role === 'usage')?.text).toContain('100')
     expect(miraTraceSections({ ...call, status: 'failed', error: '连接失败', response: undefined }).at(-1)?.text).toBe('连接失败')
   })
+  it('separates Responses messages, reasoning and tool IO from request parameters', () => {
+    const request = {
+      model: 'responses-model', instructions: 'HIDDEN_INSTRUCTIONS', tools: [{ name: 'read_file' }],
+      input: [
+        { role: 'developer', content: 'HIDDEN_DEVELOPER' },
+        { role: 'user', content: [{ type: 'input_text', text: '用户问题' }] },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: '前序思考' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '前序回复' }] },
+        { type: 'function_call', call_id: 'read', name: 'read_file', arguments: '{"path":"a.txt"}' },
+        { type: 'function_call_output', call_id: 'read', output: 'FILE_RESULT' },
+        { type: 'custom_tool_call', call_id: 'custom', name: 'custom_tool', input: 'CUSTOM_INPUT' },
+        { type: 'custom_tool_call_output', call_id: 'custom', output: 'CUSTOM_RESULT' },
+      ],
+    }
+    const sections = miraTraceSections({ ...call, request, response: undefined })
+    expect(sections.find(section => section.role === 'user')?.text).toContain('用户问题')
+    expect(sections.find(section => section.role === 'reasoning')?.text).toContain('前序思考')
+    expect(sections.find(section => section.role === 'assistant')?.text).toContain('前序回复')
+    expect(sections.filter(section => section.role === 'tool-call').map(section => JSON.parse(section.text).name)).toEqual(['read_file', 'custom_tool'])
+    expect(sections.filter(section => section.role === 'tool-result').map(section => JSON.parse(section.text).output)).toEqual(['FILE_RESULT', 'CUSTOM_RESULT'])
+    expect(JSON.parse(sections.find(section => section.title === '请求参数')!.text)).toEqual({ model: 'responses-model' })
+  })
+  it('keeps Responses history deltas and restores previous inputs in full request mode', () => {
+    const first = { ...call, request: { input: [{ role: 'developer', content: 'SYSTEM' }, { role: 'user', content: 'FIRST' }] }, response: { content: [{ type: 'text', text: 'ANSWER' }] } }
+    const next = { ...first, id: 'next', request: { input: [...first.request.input, { role: 'assistant', content: 'ANSWER' }, { role: 'user', content: 'SECOND' }] } }
+    const delta = miraTraceCalls([first, next])[1]
+    expect(delta.omittedInputs).toBe(3)
+    expect(delta.sections.filter(section => section.id.includes(':input:')).map(section => JSON.parse(section.text).content)).toEqual(['SECOND'])
+    expect(miraTraceCalls([first, next], true)[1].sections.filter(section => section.role === 'user').map(section => JSON.parse(section.text).content)).toEqual(['FIRST', 'SECOND'])
+  })
   it('shows each main-conversation input once across sequential calls instead of repeating full history', async () => {
     const first = { ...call, request: { messages: [{ role: 'system', content: 'SYSTEM' }, { role: 'user', content: 'first input' }] }, response: { content: [{ type: 'text', text: 'first output' }] } }
     const next = { ...first, id: 'next', startedAt: 12, request: { messages: [...first.request.messages, { role: 'assistant', content: 'first output' }, { role: 'tool', content: 'new tool result' }] }, response: { content: [{ type: 'text', text: 'next output' }] } }
@@ -119,11 +149,20 @@ describe('Mira model trajectory resource', () => {
     await act(async () => button('全部展开').click())
     expect(container.querySelector('details:not([open])')).toBeNull()
   })
-  it('never exposes system or developer prompts through search, expand-all or full request mode', async () => {
-    const record = { ...call, request: { messages: [{ role: 'system', content: 'HIDDEN_SYSTEM' }, { role: 'developer', content: 'HIDDEN_DEVELOPER' }, { role: 'user', content: '用户问题' }] } }
+  it.each([
+    ['Completions', { messages: [{ role: 'system', content: 'HIDDEN_SYSTEM' }, { role: 'developer', content: 'HIDDEN_DEVELOPER' }, { role: 'user', content: '用户问题' }] }],
+    ['Responses', { input: [{ role: 'system', content: 'HIDDEN_SYSTEM' }, { role: 'developer', content: 'HIDDEN_DEVELOPER' }, { role: 'user', content: [{ type: 'input_text', text: '用户问题' }] }], instructions: 'HIDDEN_INSTRUCTIONS' }],
+    ['Responses string input', { input: '用户问题', instructions: 'HIDDEN_INSTRUCTIONS' }],
+    ['Anthropic string system', { system: 'HIDDEN_SYSTEM', messages: [{ role: 'user', content: '用户问题' }] }],
+    ['Anthropic block system', { system: [{ type: 'text', text: 'HIDDEN_SYSTEM', cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: '用户问题' }] }],
+  ])('never exposes %s prompts through search, expand-all, full request mode or copying', async (_protocol, request) => {
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const record = { ...call, request: { ...request, model: 'test-model', temperature: 0.5, tools: [{ name: 'read_file' }] } }
+    const originalRequest = JSON.stringify(record.request)
     const controller = { readModelTraceFor: vi.fn().mockResolvedValue(data([record])) } as unknown as PilotController
     await act(async () => root.render(<MiraModelTracePane controller={controller} sessionId="task-a" active />))
-    expect(container.textContent).not.toContain('HIDDEN_SYSTEM')
+    expect(container.textContent).toContain('用户问题')
+    expect(container.textContent).not.toContain('HIDDEN')
     expect(container.querySelector('[data-role="system"]')).toBeNull()
     await find('HIDDEN')
     expect(container.querySelector('.mira-model-trace__search [role="status"]')?.textContent).toBe('0/0')
@@ -137,7 +176,17 @@ describe('Mira model trajectory resource', () => {
     expect(container.textContent).toContain('用户问题')
     expect(container.textContent).not.toContain('HIDDEN')
     expect(container.querySelector('[data-role="system"]')).toBeNull()
-    expect(record.request.messages[0].content).toBe('HIDDEN_SYSTEM')
+    await find('HIDDEN')
+    expect(container.querySelector('.mira-model-trace__search [role="status"]')?.textContent).toBe('0/0')
+    await act(async () => button('关闭轨迹查找').click())
+    await act(async () => button('复制请求参数').click())
+    expect(JSON.parse(write.mock.calls[0][0])).toEqual({ model: 'test-model', temperature: 0.5 })
+    await act(async () => {
+      for (const copy of container.querySelectorAll<HTMLButtonElement>('.mira-model-trace__section-actions button')) copy.click()
+    })
+    expect(write.mock.calls.some(([text]) => text.includes('用户问题'))).toBe(true)
+    expect(write.mock.calls.every(([text]) => !text.includes('HIDDEN'))).toBe(true)
+    expect(JSON.stringify(record.request)).toBe(originalRequest)
   })
 
   it('summarizes only actual finite provider totals and keeps the target title', async () => {
