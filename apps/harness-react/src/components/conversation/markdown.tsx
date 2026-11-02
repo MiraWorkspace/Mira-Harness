@@ -1,10 +1,11 @@
-import { cloneElement, isValidElement, useContext, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactElement } from 'react'
+import { cloneElement, isValidElement, useContext, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type MouseEvent, type ReactElement } from 'react'
+import * as Popover from '@radix-ui/react-popover'
 import MarkdownIt from 'markdown-it'
 import { MiraConversationContext } from './MiraConversationMessages'
 import { miraFileTreeIcon } from '../../lib/mira-file-tree-icon'
 import { miraMessageLink } from '../../lib/mira-message-links'
 import { cjk } from '@streamdown/cjk'
-import { Streamdown, defaultRehypePlugins, type Components } from 'streamdown'
+import { Streamdown, defaultRehypePlugins, type AnimateOptions, type Components, type ExtraProps } from 'streamdown'
 import { RotateCw } from 'lucide-react'
 import type { HarnessSource } from '../../../../../src/config/harness'
 import { installHarnessCitations } from '../../../../../src/utils/harnessCitations'
@@ -59,11 +60,55 @@ function rewriteMessageFileLinks(options: { directory?: string }) {
   }
 }
 const streamdownPlugins = { cjk }
+const streamingInk: AnimateOptions = { animation: 'mira-ink', sep: 'char', duration: 280, stagger: 18, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', maxBacklogMs: 160 }
+function InkSpan({ node: _node, style, ...props }: ComponentProps<'span'> & ExtraProps) {
+  // Streamdown settles old spans on every update; let each mounted character finish instead.
+  const entrance = useRef(style)
+  return <span {...props} style={'data-sd-animate' in props ? entrance.current : style} />
+}
 const streamdownComponents: Components = {
   code: MiraMarkdownCode,
+  span: InkSpan,
   a: ({ href, children }) => <MessageLink href={href}>{children}</MessageLink>,
   // 保留 Streamdown 的块级标记，无语言代码围栏也不能被当成 inline code。
   pre: ({ children }) => isValidElement(children) ? cloneElement(children as ReactElement<{ 'data-block'?: string }>, { 'data-block': 'true' }) : <>{children}</>,
+}
+
+function useInkText(content: string, streaming?: boolean) {
+  const [shown, setShown] = useState(content)
+  const cursor = useRef({ text: content, time: undefined as number | undefined, credit: 0 })
+  useEffect(() => {
+    const state = cursor.current
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let frame = 0
+    const settle = () => {
+      cancelAnimationFrame(frame)
+      state.text = content; state.time = undefined; state.credit = 0; setShown(content)
+    }
+    if (!streaming || document.hidden || motion.matches || !content.startsWith(state.text)) { settle(); return }
+    if (state.text === content) return
+    state.time ??= performance.now()
+    const step = (now: number) => {
+      // ~55 characters/second normally; large bursts catch up rather than build a long queue.
+      state.credit += Math.max(0, now - state.time!) * Math.max(.055, (content.length - state.text.length) / 320)
+      state.time = now
+      const count = Math.floor(state.credit)
+      if (count > 0) {
+        state.credit -= count
+        let end = Math.min(content.length, state.text.length + count)
+        if (end < content.length && /[\uDC00-\uDFFF]/.test(content[end])) end++
+        state.text = content.slice(0, end); setShown(state.text)
+      }
+      if (state.text.length < content.length) frame = requestAnimationFrame(step)
+      else { state.time = undefined; state.credit = 0 }
+    }
+    const skipMotion = () => { if (document.hidden || motion.matches) settle() }
+    frame = requestAnimationFrame(step)
+    document.addEventListener('visibilitychange', skipMotion)
+    motion.addEventListener('change', skipMotion)
+    return () => { cancelAnimationFrame(frame); document.removeEventListener('visibilitychange', skipMotion); motion.removeEventListener('change', skipMotion) }
+  }, [content, streaming])
+  return streaming && content.startsWith(shown) ? shown : content
 }
 
 export const renderCompletedMarkdown = (content: string, sources?: HarnessSource[], highlights?: Map<string, MiraHighlightResult>, directory?: string) => staticMarkdown.render(content, { sources, highlights, directory })
@@ -91,12 +136,14 @@ export async function prepareMarkdownHighlights(content: string, signal?: AbortS
 
 export function MessageMarkdown({ content, sources, streaming, directory, onOpenLink }: { content: string; sources?: HarnessSource[]; streaming?: boolean; directory?: string; onOpenLink?: (url: string) => void }) {
   const conversation = useContext(MiraConversationContext)
+  const inkText = useInkText(content, streaming)
   const linkDirectory = directory ?? conversation.session?.workingDirectory
   const messageRehypePlugins = useMemo(() => [[rewriteMessageFileLinks, { directory: linkDirectory }] as [typeof rewriteMessageFileLinks, { directory?: string }], ...Object.values(defaultRehypePlugins)], [linkDirectory])
   const handleLink = (event: MouseEvent<HTMLDivElement>) => {
     const target = event.target instanceof Element ? event.target : event.target instanceof Node ? event.target.parentElement : null
     const anchor = target?.closest('a[href]')
-    if (!anchor || !event.currentTarget.contains(anchor)) return
+    // Citation previews use a portal but keep this message's controlled link routing.
+    if (!anchor) return
     // Cancel synchronously, including modifier/middle clicks, before any renderer handler.
     event.preventDefault(); event.stopPropagation()
     if (event.type === 'auxclick' && event.button !== 1) return
@@ -119,8 +166,8 @@ export function MessageMarkdown({ content, sources, streaming, directory, onOpen
     } catch (error) { conversation.controller?.reportError(error) }
   }
   return <div className="min-w-0" onClickCapture={handleLink} onAuxClickCapture={handleLink}>
-    {streaming ? <div className="message-markdown size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-      <Streamdown mode="streaming" parseIncompleteMarkdown components={streamdownComponents} rehypePlugins={messageRehypePlugins} urlTransform={href => miraMessageLink(href, directory ?? conversation.session?.workingDirectory) ? href : ''} plugins={streamdownPlugins} shikiTheme={miraCodeThemes} animated={false} isAnimating={false}>{content}</Streamdown>
+    {streaming ? <div className="message-markdown mira-streaming-ink size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      <Streamdown mode="streaming" parseIncompleteMarkdown components={streamdownComponents} rehypePlugins={messageRehypePlugins} urlTransform={href => miraMessageLink(href, directory ?? conversation.session?.workingDirectory) ? href : ''} plugins={streamdownPlugins} shikiTheme={miraCodeThemes} animated={streamingInk} isAnimating>{inkText}</Streamdown>
     </div> : <StaticMarkdown content={content} sources={sources} directory={linkDirectory} />}
   </div>
 }
@@ -144,14 +191,38 @@ function StaticMarkdown({ content, sources, directory }: { content: string; sour
     })
     return () => cancellation.abort()
   }, [content, retry])
-  const [citation, setCitation] = useState<HarnessSource>()
+  const [citation, setCitation] = useState<{ source: HarnessSource; marker: HTMLButtonElement }>()
+  const citationAnchor = useRef<HTMLButtonElement | null>(null)
+  const citationContent = useRef<HTMLDivElement>(null)
+  const citationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const citationId = useId()
+  const cancelCitationTimer = () => clearTimeout(citationTimer.current)
+  const closeCitation = () => { cancelCitationTimer(); setCitation(undefined) }
+  const citationMarker = (target: EventTarget | null) => target instanceof Element ? target.closest<HTMLButtonElement>('.citation-marker button') : null
+  function showCitation(marker: HTMLButtonElement, delay = 0) {
+    cancelCitationTimer()
+    const source = sources?.find(item => item.index === Number(marker.dataset.citationIndex))
+    if (!source) return
+    const open = () => { citationAnchor.current = marker; setCitation(current => current?.marker === marker && current.source === source ? current : { source, marker }) }
+    if (delay) citationTimer.current = setTimeout(open, delay)
+    else open()
+  }
+  function scheduleCitationClose() {
+    cancelCitationTimer()
+    citationTimer.current = setTimeout(() => { if (!citationContent.current?.contains(document.activeElement)) setCitation(undefined) }, 120)
+  }
+  useEffect(() => { closeCitation(); return cancelCitationTimer }, [html, sources])
+  useEffect(() => {
+    if (!citation) return
+    const marker = citation.marker
+    marker.setAttribute('aria-expanded', 'true'); marker.setAttribute('aria-controls', citationId)
+    return () => { marker.removeAttribute('aria-expanded'); marker.removeAttribute('aria-controls') }
+  }, [citation, citationId])
   async function handleClick(event: MouseEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement
-    const marker = target.closest<HTMLButtonElement>('.citation-marker button')
+    const marker = citationMarker(target)
     if (marker) {
-      const index = Number(marker.dataset.citationIndex)
-      const source = sources?.find(item => item.index === index)
-      setCitation(current => (source && current !== source ? source : undefined))
+      showCitation(marker)
       return
     }
     const copyButton = target.closest<HTMLButtonElement>('.markdown-code-copy')
@@ -164,13 +235,36 @@ function StaticMarkdown({ content, sources, directory }: { content: string; sour
     } catch { /* 剪贴板不可用时保持按钮原状 */ }
   }
   return <div className="message-markdown size-full text-ui-base leading-[1.75] tracking-wide [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-    <div className="pilot-markdown [&_.citation-marker_button]:leading-normal!" onClick={event => void handleClick(event)} dangerouslySetInnerHTML={{ __html: html }} />
+    <div className="pilot-markdown [&_.citation-marker_button]:leading-normal!" onClick={event => void handleClick(event)} onPointerOver={event => {
+      const marker = citationMarker(event.target)
+      if (marker && !marker.contains(event.relatedTarget as Node | null)) showCitation(marker, 120)
+    }} onPointerOut={event => {
+      const marker = citationMarker(event.target)
+      if (marker && !marker.contains(event.relatedTarget as Node | null)) scheduleCitationClose()
+    }} onFocusCapture={event => { const marker = citationMarker(event.target); if (marker) showCitation(marker) }} onBlurCapture={event => {
+      if (citationMarker(event.target) && !citationContent.current?.contains(event.relatedTarget)) scheduleCitationClose()
+    }} onKeyDown={event => {
+      if (!citationMarker(event.target) || !citation || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeCitation() }
+      else if (event.key === 'Tab' && !event.shiftKey && citationContent.current?.querySelector('a')) {
+        event.preventDefault(); event.stopPropagation(); citationContent.current.querySelector('a')!.focus({ preventScroll: true })
+      }
+    }} dangerouslySetInnerHTML={{ __html: html }} />
     {highlightFailure === content && <div data-mira-find-ignore className="flex items-center gap-2 text-xs text-foreground-subtle" role="alert"><span>代码高亮失败</span><button type="button" title="重试代码高亮" aria-label="重试代码高亮" className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand" onClick={() => setRetry(value => value + 1)}><RotateCw size={14} /></button></div>}
-    {citation && <aside className="pilot-citation" role="note">
-      <button type="button" className="pilot-citation__close" aria-label="关闭来源" onClick={() => setCitation(undefined)}>×</button>
-      <strong>{citation.title || citation.url}</strong>
-      {citation.snippet && <p>{citation.snippet}</p>}
-      {citation.url && <a href={citation.url} target="_blank" rel="noreferrer">{citation.url}</a>}
-    </aside>}
+    <Popover.Root open={Boolean(citation)} onOpenChange={open => { if (!open) closeCitation() }}>
+      <Popover.Anchor virtualRef={citationAnchor} />
+      {citation && <Popover.Portal container={document.getElementById('root')}><Popover.Content ref={citationContent} id={citationId} className="pilot-citation" aria-label={`来源 ${citation.source.index}`} data-mira-find-ignore side="top" align="start" sideOffset={6} collisionPadding={12} hideWhenDetached onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()} onInteractOutside={event => {
+        if (citationMarker(event.target)) event.preventDefault()
+      }} onEscapeKeyDown={event => { event.preventDefault(); event.stopPropagation(); citationAnchor.current?.focus({ preventScroll: true }); closeCitation() }} onPointerEnter={cancelCitationTimer} onPointerLeave={scheduleCitationClose} onFocusCapture={cancelCitationTimer} onBlurCapture={scheduleCitationClose} onKeyDownCapture={event => {
+        if (event.key !== 'Tab' || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+        event.stopPropagation(); citationAnchor.current?.focus({ preventScroll: true })
+        if (event.shiftKey) event.preventDefault()
+        else closeCitation()
+      }}>
+        <strong>{citation.source.title || citation.source.url}</strong>
+        {citation.source.snippet && <p>{citation.source.snippet}</p>}
+        {citation.source.url && <a href={citation.source.url} target="_blank" rel="noreferrer">{citation.source.url}</a>}
+      </Popover.Content></Popover.Portal>}
+    </Popover.Root>
   </div>
 }

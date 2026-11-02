@@ -15,7 +15,7 @@ describe('Mira streaming Markdown code semantics', () => {
     const html = renderToStaticMarkup(React.createElement(MessageMarkdown, { streaming: true, content: '正文 `const answer = 42` 结尾' }))
     expect(html).toContain('data-streamdown="inline-code"')
     expect(html).not.toContain('data-streamdown="code-block"')
-    expect(html).toContain('const answer = 42')
+    expect(html.replace(/<[^>]+>/g, '')).toContain('const answer = 42')
     expect(highlight).not.toHaveBeenCalled()
   })
 

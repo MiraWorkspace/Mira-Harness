@@ -50,8 +50,8 @@ export function MiraStreamingCode({ code, language, startLine = 1, hideLineNumbe
     <CodeBlockHeader language={language} />
     {showControls && <div className="pointer-events-none sticky top-2 z-10 -mt-10 flex h-8 items-center justify-end">
       <div className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-md border border-sidebar bg-sidebar/80 px-1.5 py-1 supports-[backdrop-filter]:bg-sidebar/70 supports-[backdrop-filter]:backdrop-blur" data-streamdown="code-block-actions">
-        {codeControls?.download !== false && <CodeBlockDownloadButton code={code} language={language} />}
-        {codeControls?.copy !== false && <CodeBlockCopyButton code={code} aria-label="复制代码" title="复制代码" />}
+        {codeControls?.download !== false && <CodeBlockDownloadButton code={code} language={language} disabled={false} />}
+        {codeControls?.copy !== false && <CodeBlockCopyButton code={code} aria-label="复制代码" title="复制代码" disabled={false} />}
       </div>
     </div>}
     <div data-streamdown="code-block-body" data-language={language} data-highlight-state={result ? 'ready' : failure === identity ? 'error' : 'loading'} className={`overflow-auto rounded-md border border-border bg-background p-4 text-sm [&_pre]:m-0 [&_pre]:font-mono dark:[&_.shiki]:text-[var(--shiki-dark,inherit)]! dark:[&_.shiki]:bg-[var(--shiki-dark-bg,transparent)]! dark:[&_.shiki_span]:text-[var(--shiki-dark,inherit)]! dark:[&_.shiki_span]:bg-[var(--shiki-dark-bg,transparent)]!${showLineNumbers ? ' [&_.line]:before:content-[counter(line)] [&_.line]:before:inline-block [&_.line]:before:[counter-increment:line] [&_.line]:before:w-6 [&_.line]:before:mr-4 [&_.line]:before:text-[13px] [&_.line]:before:text-right [&_.line]:before:text-muted-foreground/50 [&_.line]:before:select-none' : ''}`} style={{ maxHeight, counterReset: `line ${startLine - 1}` } as CSSProperties}>

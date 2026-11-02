@@ -40,6 +40,16 @@
 :where(#root) :where(button, [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio']) { transition: color var(--mira-motion-feedback, 120ms) ease-out, background-color var(--mira-motion-feedback, 120ms) ease-out, border-color var(--mira-motion-feedback, 120ms) ease-out, opacity var(--mira-motion-feedback, 120ms) ease-out; }
 .mira-sidebar-section__actions, .mira-sidebar-section__title svg, .mira-collection-chevron, .mira-session-row__pin { transition: opacity 120ms ease-out, transform 150ms ease-out; }
 
+/* Only newly streamed characters animate; cap burst delays so prose stays caught up. */
+.mira-streaming-ink [data-sd-animate] {
+  animation: var(--sd-animation) var(--sd-duration) var(--sd-easing) min(var(--sd-delay, 0ms), 160ms) both;
+}
+@keyframes sd-mira-ink {
+  from { opacity: 0; filter: blur(4px); }
+  50% { opacity: 1; filter: blur(.8px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
 /* Portals can live outside .pilot-workbench. Disable loops and spatial motion there too. */
 @media (prefers-reduced-motion: reduce) {
   html *, html *::before, html *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

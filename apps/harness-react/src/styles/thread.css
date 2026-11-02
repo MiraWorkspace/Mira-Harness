@@ -84,12 +84,11 @@
 .pilot-markdown hr { margin: 1.25em 0; border: 0; border-top: 1px solid var(--color-border); }
 .pilot-markdown .citation-marker button { padding: 0 2px; border: 0; color: var(--color-brand); background: transparent; font: inherit; cursor: pointer; }
 .pilot-markdown .citation-marker button:hover { text-decoration: underline; }
-.pilot-citation { position: relative; display: grid; gap: 4px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-background-alt); font-size: 11px; }
+.pilot-markdown .citation-marker button:focus-visible, .pilot-citation a:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+.pilot-citation { z-index: 80; display: grid; width: 360px; max-width: var(--radix-popover-content-available-width); max-height: var(--radix-popover-content-available-height); gap: 6px; overflow-y: auto; padding: 12px; border: 1px solid var(--color-popover-border); border-radius: 12px; color: var(--color-popover-foreground); background: var(--color-popover); box-shadow: 0 4px 16px color-mix(in srgb, black 12%, transparent); font-size: var(--text-ui-sm); line-height: 1.6; outline: none; scrollbar-color: var(--color-border) transparent; scrollbar-width: thin; }
 .pilot-citation strong { overflow-wrap: anywhere; }
 .pilot-citation p { margin: 0; color: var(--color-foreground-subtle); }
 .pilot-citation a { overflow: hidden; color: var(--color-brand); text-overflow: ellipsis; white-space: nowrap; }
-.pilot-citation__close { position: absolute; top: 6px; right: 8px; display: grid; width: 20px; height: 20px; place-items: center; padding: 0; border: 0; border-radius: 4px; color: var(--color-foreground-subtle); background: transparent; font-size: 14px; }
-.pilot-citation__close:hover { color: var(--color-foreground); background: var(--color-hover); }
 
 .pilot-launchpad { display: grid; min-height: min(560px, 72vh); align-content: center; gap: 22px; padding: 36px 0 24px; }
 .pilot-launchpad__intro { display: grid; justify-items: center; gap: 10px; text-align: center; }
