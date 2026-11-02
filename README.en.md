@@ -255,13 +255,16 @@ The development command builds the React workspace, workflow runtime, and local 
 | `npm run dev` | Prepare resources and start Electron in development mode |
 | `npm run build` | Run Vue / React type checks and the full production build |
 | `npm test` | Run Vitest regression tests |
-| `npm run desktop:build` | Build a macOS arm64 DMG |
+| `npm run desktop:build` | Build and verify an ad-hoc signed macOS arm64 DMG for local testing |
+| `npm run desktop:release` | Build a Developer ID signed and Apple-notarized macOS arm64 release DMG |
 | `npm run desktop:build:win` | Build a Windows x64 NSIS installer on Windows |
 | `npm run harness:build` | Rebuild the React workspace and remote client |
 | `npm run flow:build` | Rebuild the workflow compiler and runtime |
 | `npm run tools:build` | Prepare search tools and computer-control helpers |
 
-Both installer commands include type checks and the production build. Local tools are prepared for the target platform and architecture during packaging.
+The installer commands include type checks and the production build. Local tools are prepared for the target platform and architecture during packaging.
+
+See [macOS signing and release](docs/MACOS_RELEASE.md) for certificate setup, build commands, and notification acceptance checks (Chinese).
 
 </details>
 

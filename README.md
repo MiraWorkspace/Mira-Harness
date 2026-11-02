@@ -255,13 +255,16 @@ npm run dev
 | `npm run dev` | 准备资源并启动 Electron 开发环境 |
 | `npm run build` | Vue / React 类型检查和完整生产构建 |
 | `npm test` | 运行 Vitest 回归测试 |
-| `npm run desktop:build` | 构建 macOS arm64 DMG |
+| `npm run desktop:build` | 构建带 ad-hoc 签名并验签的 macOS arm64 本机测试 DMG |
+| `npm run desktop:release` | 构建 Developer ID 签名并经 Apple 公证的 macOS arm64 正式 DMG |
 | `npm run desktop:build:win` | 在 Windows 上构建 x64 NSIS 安装包 |
 | `npm run harness:build` | 单独重建 React 工作台及远程客户端 |
 | `npm run flow:build` | 单独重建工作流编译器与运行时 |
 | `npm run tools:build` | 准备搜索工具及电脑控制辅助程序 |
 
-两个安装包命令都包含类型检查和生产构建，本地工具在打包时按目标平台与架构准备。
+安装包命令均包含类型检查和生产构建，本地工具在打包时按目标平台与架构准备。
+
+macOS 本机测试与正式发布的证书准备、命令和通知验收步骤见 [macOS 签名与发布](docs/MACOS_RELEASE.md)。
 
 </details>
 

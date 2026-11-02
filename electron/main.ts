@@ -68,7 +68,7 @@ app.whenReady().then(async () => {
   })
   services.harnessRuntime.onPublicEvent(event => notifications?.handle(event))
   registerNotificationIpc(notifications)
-  if (process.platform === 'win32') app.setAppUserModelId('com.wujinbo.mira')
+  if (process.platform === 'win32') app.setAppUserModelId('com.tuyn53.mira')
   let remoteOwner: import('electron').WebContents | undefined
   const remoteHarness = createRemoteHarness(services.database, services.harnessRuntime, () => {
     if (!remoteOwner || remoteOwner.isDestroyed()) throw new Error('电脑窗口已关闭，请重新开启远程控制')

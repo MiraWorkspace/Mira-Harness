@@ -25,12 +25,13 @@
     "tools:build": "node scripts/build-mira-tools.mjs",
     "postinstall": "node scripts/prepare-node-pty.mjs",
     "harness:build": "node scripts/build-harness-react.mjs",
-    "desktop:build": "npm run build -- --skip-tools && electron-rebuild --force --only better-sqlite3,node-pty --arch arm64 && electron-builder --mac dmg --arm64",
+    "desktop:build": "node scripts/build-macos.mjs",
+    "desktop:release": "node scripts/build-macos.mjs --release",
     "desktop:build:win": "set \"ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/\" && npm run build -- --skip-tools && electron-rebuild --force --only better-sqlite3,node-pty --arch x64 --dist-url https://npmmirror.com/mirrors/electron/ && electron-builder --win nsis"
   },
   "main": "out/main/main.js",
   "build": {
-    "appId": "com.wujinbo.mira",
+    "appId": "com.tuyn53.mira",
     "productName": "Mira",
     "icon": "src/asset/mira.icns",
     "win": {
