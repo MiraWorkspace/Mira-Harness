@@ -38,6 +38,15 @@
         ],
         "createdAt": "2026-10-29T08:56:30.836Z",
         "reason": "Agent: existing API URL fields use a monospace fallback for technical data, consistent with DESIGN.md Typography; capability icons do not introduce this font."
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "src/layouts/index.vue"
+        ],
+        "createdAt": "2026-11-03T07:39:36.687Z",
+        "reason": "user confirmed: retain the existing new-task button width animation and suppress its warning"
       }
     ]
   }
