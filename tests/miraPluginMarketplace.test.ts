@@ -36,6 +36,32 @@ describe('Mira plugin marketplace', () => {
     expect(fetcher).not.toHaveBeenCalled()
     expect(store.readSkill(store.snapshots(), 'pdf:pdf')).toContain('PDF Skill')
   })
+  it('publishes the routable Mira guide metadata and readable reference pack consistently', async () => {
+    const { market, store } = fixture(true)
+    await market.seed()
+    const references = [
+      'tasks-and-projects.md', 'composer-and-context.md', 'plugins-and-capabilities.md',
+      'files-and-workspace.md', 'automations-and-workflows.md', 'settings-and-security.md', 'troubleshooting.md',
+    ]
+    const frozen = store.snapshots()
+    const guide = frozen.find(plugin => plugin.id === 'mira-guide@mira-builtin')
+    expect(guide).toMatchObject({ version: '0.2.0', description: expect.stringContaining('故障排查'), listing: { displayName: 'Mira 使用指南', examplePrompts: expect.arrayContaining([
+      expect.stringContaining('项目'), expect.stringContaining('MCP'), expect.stringContaining('权限'), expect.stringContaining('自动化'),
+    ]) } })
+    expect(store.readSkill(frozen, 'mira-guide:mira-guide')).toContain('## 选择参考文件')
+    for (const reference of references) {
+      expect(store.readSkill(frozen, 'mira-guide:mira-guide', `references/${reference}`)).toMatch(/^# /)
+    }
+    expect(() => store.readSkill(frozen, 'mira-guide:mira-guide', '../.mira-plugin/plugin.json')).toThrow('超出')
+
+    const manifest = JSON.parse(readFileSync(resolve('resources/plugins/mira-guide/.mira-plugin/plugin.json'), 'utf8'))
+    const catalog = JSON.parse(readFileSync(resolve('resources/plugins/marketplace.json'), 'utf8'))
+    const entry = catalog.plugins.find((plugin: { name: string }) => plugin.name === manifest.name)
+    expect(entry).toBeDefined()
+    expect({ name: entry.name, version: entry.version, description: entry.description, listing: entry.listing }).toEqual({
+      name: manifest.name, version: manifest.version, description: manifest.description, listing: manifest.listing,
+    })
+  })
   it('persists a local market, installs its package, and preserves installed plugins when removing the source', async () => {
     const { market, store, home, paths } = fixture(); packageAt(join(home, 'review'))
     writeFileSync(join(home, 'marketplace.json'), JSON.stringify({ name: 'local-test', plugins: [{ name: 'review', source: 'review', version: '1.0.0' }] }))

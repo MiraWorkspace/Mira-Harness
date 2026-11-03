@@ -1,7 +1,7 @@
 {
   "name": "mira-guide",
-  "version": "0.1.0",
-  "description": "了解 Mira 的任务、项目、插件、技能和本地设置。",
+  "version": "0.2.0",
+  "description": "Mira 产品使用与故障排查指南，覆盖项目、对话能力、插件、MCP、自动化和本地安全设置。",
   "license": "MIT",
   "skills": "skills",
   "listing": {
@@ -10,7 +10,11 @@
     "icon": "mira-guide",
     "author": "Mira",
     "examplePrompts": [
-      "介绍一下 Mira 的插件和技能怎么使用。"
+      "如何创建多源文件夹项目，并设置主要目录？",
+      "插件安装后为什么当前任务里没有，MCP 还需要怎么启用？",
+      "Skill、Command、Agent、MCP 和 Hook 有什么区别？",
+      "如何配置模型、推理强度和权限模式？",
+      "如何创建并管理自动化任务和工作流？"
     ]
   }
 }

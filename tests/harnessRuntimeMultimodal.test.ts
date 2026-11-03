@@ -416,9 +416,10 @@ describe('Harness multimodal message ownership', () => {
 
   it('freezes plugin ownership across reload and lazily reads real instructions without granting capabilities', async () => {
     const view = setup(false), packageRoot = join(view.root, 'plugin-package')
-    mkdirSync(join(packageRoot, '.claude-plugin'), { recursive: true }); mkdirSync(join(packageRoot, 'skills/review'), { recursive: true })
+    mkdirSync(join(packageRoot, '.claude-plugin'), { recursive: true }); mkdirSync(join(packageRoot, 'skills/review/references'), { recursive: true })
     writeFileSync(join(packageRoot, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'review-kit', description: 'Reviews code' }))
     writeFileSync(join(packageRoot, 'skills/review/SKILL.md'), '---\nname: review\ndescription: Reviews regressions\n---\nMIRA_PLUGIN_LAZY_INSTRUCTIONS')
+    writeFileSync(join(packageRoot, 'skills/review/references/guide.md'), '# Review guide\nUse the verified workflow.')
     view.database.plugins.register(packageRoot)
     await view.send('[@review-kit](plugin://review-kit@local)', [])
     const state = (view.prompt.mock.contexts[0] as Agent).state
@@ -430,8 +431,12 @@ describe('Harness multimodal message ownership', () => {
     expect(frozen[0]).toMatchObject({ id: 'review-kit@local', root: realpathSync(packageRoot) })
     const registered = (HarnessRuntime.prototype as any).tools.call(view.runtime, view.sender, view.sessionId)
     const reader = registered.tools.find((tool: any) => tool.name === 'load_plugin_skill')
+    const resource = registered.tools.find((tool: any) => tool.name === 'read_plugin_resource')
     expect((await reader.execute('call', { name: 'review-kit:review' })).content[0].text).toContain('MIRA_PLUGIN_LAZY_INSTRUCTIONS')
+    expect((await resource.execute('call', { name: 'review-kit:review', path: 'references/guide.md' })).content[0].text).toContain('Use the verified workflow.')
+    await expect(resource.execute('call', { name: 'review-kit:review', path: '../.claude-plugin/plugin.json' })).rejects.toThrow('超出')
     expect(registered.descriptors.get('load_plugin_skill').risk).toBe('read')
+    expect(registered.descriptors.get('read_plugin_resource').risk).toBe('read')
     view.database.plugins.setEnabled('review-kit@local', false)
     await expect(reader.execute('call', { name: 'review-kit:review' })).rejects.toThrow('已停用')
     await view.send('[@review-kit](plugin://review-kit@local)', [])
