@@ -48,8 +48,9 @@ describe('native React project editor', () => {
     await view.click(view.button('选择文件夹')); await view.submit()
     expect(view.controller.saveProject).not.toHaveBeenCalled()
     const trust = container.querySelector('.mira-project-trust')!
-    expect(trust.querySelector('button')).toBe(document.activeElement)
-    await view.click(trust.querySelector('button')!)
+    const cancel = Array.from(trust.querySelectorAll('button')).find(node => node.textContent === '取消')!
+    expect(cancel).toBe(document.activeElement)
+    await view.click(cancel)
     expect(container.querySelector('.mira-project-trust')).toBeNull()
     expect(container.querySelector<HTMLInputElement>('input')!.value).toBe('shared')
     await view.submit()
@@ -62,6 +63,23 @@ describe('native React project editor', () => {
     expect(view.controller.saveProject).toHaveBeenCalledOnce()
     await act(async () => finish(project))
     expect(view.onSaved).toHaveBeenCalledOnce()
+  })
+
+  it('closes only the trust confirmation from its close button and preserves all selected folders', async () => {
+    const view = await fixture(false)
+    view.controller.selectProjectDirectories.mockResolvedValueOnce(['/work/project', '/shared'])
+    await view.click(view.button('选择文件夹')); await view.submit()
+    expect(container.querySelector('.mira-project-trust h2')?.textContent).toBe('信任这些文件夹吗？')
+    expect(Array.from(container.querySelectorAll('.mira-project-trust__paths li'), node => node.textContent)).toEqual(['/work/project', '/shared'])
+    await view.click(view.button('关闭文件夹信任确认'))
+    expect(container.querySelector('.mira-project-trust')).toBeNull()
+    expect(view.onClose).not.toHaveBeenCalled()
+    expect(view.controller.saveProject).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLInputElement>('input')!.value).toBe('project')
+    expect(container.querySelectorAll('.mira-project-editor__root')).toHaveLength(2)
+    await view.submit()
+    await view.click(view.button('信任文件夹并创建'))
+    expect(view.controller.saveProject).toHaveBeenCalledExactlyOnceWith({ name: 'project', roots: ['/work/project', '/shared'], primaryRoot: '/work/project' }, undefined)
   })
 
   it('retains the draft and exposes a save error so the user can retry', async () => {
