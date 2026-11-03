@@ -15,7 +15,7 @@ describe('Vue Shell and React search use one command center', () => {
     expect(window.dispatchEvent).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: HARNESS_COMMAND_CENTER_EVENT }))
     expect(palette.visible).toBe(false)
   })
-  it.each(['/settings/general', '/novel', '/workspace/chat', '/workspace/history'])('retains the existing Vue palette outside React: %s', path => {
+  it.each(['/settings/general', '/fixture-app', '/settings/plugins', '/settings/model-config'])('retains the existing Vue palette outside React: %s', path => {
     route.currentRoute.value.path = path
     const palette = useCommandPaletteStore(); palette.open()
     expect(palette.visible).toBe(true); expect(window.dispatchEvent).not.toHaveBeenCalled()

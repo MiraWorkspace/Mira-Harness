@@ -1,5 +1,4 @@
 import { createReadStream, existsSync, realpathSync, statSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, relative, resolve } from 'node:path'
 import type { MicroApp } from '../../src/types'
@@ -29,7 +28,7 @@ const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1'])
 /**
  * 本地微应用服务只接受回环来源的跨源请求：
  * 桌面端渲染进程（dev 为 http://localhost:*，打包后为 file://，Origin 为 null）与
- * 本机页面可以访问，远程网页无法借用本地 API 代理。
+ * 本机页面可以读取静态资源与媒体预览。
  */
 export function corsHeadersFor(request: IncomingMessage): Record<string, string> {
   const origin = request.headers.origin
@@ -46,39 +45,29 @@ export function corsHeadersFor(request: IncomingMessage): Record<string, string>
   }
 }
 
-export type LocalMicroAppApiHandler = (
+type LocalMicroAppMediaHandler = (
   subpath: string,
   request: IncomingMessage,
   response: ServerResponse,
 ) => void
 
-export interface LocalMicroAppApiRoute {
-  capability: string
-  handle: LocalMicroAppApiHandler
-}
-
 export interface LocalMicroAppServerOptions {
-  mediaHandler?: LocalMicroAppApiHandler
+  mediaHandler?: LocalMicroAppMediaHandler
   /** 内置资源包名 -> 绝对目录（随安装包分发，dev/打包路径不同）。 */
   builtinRoots?: Record<string, string>
-  /** 按微应用 id 注册的 POST API 处理器。 */
-  apiHandlers?: ReadonlyMap<string, LocalMicroAppApiRoute>
 }
 
 export class LocalMicroAppServer {
   private readonly roots = new Map<string, string>()
   private readonly builtinRoots: Record<string, string>
-  private readonly apiHandlers: ReadonlyMap<string, LocalMicroAppApiRoute>
-  private readonly apiTokens = new Map<string, { appId: string; capabilities: Set<string> }>()
   private server?: Server
   private _port?: number
 
   constructor(options: LocalMicroAppServerOptions = {}) {
     this.mediaHandler = options.mediaHandler
     this.builtinRoots = options.builtinRoots ?? {}
-    this.apiHandlers = options.apiHandlers ?? new Map()
   }
-  private readonly mediaHandler?: LocalMicroAppApiHandler
+  private readonly mediaHandler?: LocalMicroAppMediaHandler
 
   getMediaUrl(id: string) {
     if (!this._port || !/^[a-f0-9]{64}$/.test(id)) throw new Error('媒体预览服务不可用')
@@ -124,27 +113,15 @@ export class LocalMicroAppServer {
   }
 
   stop() {
-    this.apiTokens.clear()
     const server = this.server
     this.server = undefined
     this._port = undefined
     if (!server) return Promise.resolve()
     return new Promise<void>(resolveStop => {
       server.close(() => resolveStop())
-      // Shutdown must not wait for a still-open renderer/API response.
+      // Shutdown must not wait for a still-open renderer/media response.
       server.closeAllConnections()
     })
-  }
-
-  issueApiToken(appId: string, capabilities: readonly string[]) {
-    if (!this.apiHandlers.has(appId)) throw new Error('应用没有可用的本地 API')
-    const token = randomBytes(32).toString('hex')
-    this.apiTokens.set(token, { appId, capabilities: new Set(capabilities) })
-    return token
-  }
-
-  revokeApiToken(token: string) {
-    this.apiTokens.delete(token)
   }
 
   setApps(apps: MicroApp[]) {
@@ -198,11 +175,6 @@ export class LocalMicroAppServer {
     return `http://127.0.0.1:${this._port}/apps/${encodeURIComponent(appId)}/`
   }
 
-  getApiBaseUrl(appId: string) {
-    if (!this._port) throw new Error('本地服务尚未启动')
-    return `http://127.0.0.1:${this._port}/apps/${encodeURIComponent(appId)}/`
-  }
-
   private handleRequest(request: IncomingMessage, response: ServerResponse) {
     let url: URL
     try { url = new URL(request.url || '/', 'http://127.0.0.1') } catch {
@@ -231,25 +203,12 @@ export class LocalMicroAppServer {
       }
       response.writeHead(204, {
         ...corsHeaders,
-        'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Max-Age': '86400',
       }).end()
       return
     }
     if (request.method !== 'GET' && request.method !== 'HEAD') {
-      const route = this.apiHandlers.get(appId)
-      if (request.method === 'POST' && route) {
-        const authorization = request.headers.authorization
-        const token = typeof authorization === 'string' && authorization.startsWith('Bearer ') ? authorization.slice(7) : ''
-        const grant = this.apiTokens.get(token)
-        if (!grant || grant.appId !== appId || !grant.capabilities.has(route.capability)) {
-          response.writeHead(403, corsHeadersFor(request)).end()
-          return
-        }
-        route.handle(match[2] || '', request, response)
-        return
-      }
       response.writeHead(405, corsHeadersFor(request)).end()
       return
     }

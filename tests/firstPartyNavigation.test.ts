@@ -31,7 +31,7 @@ describe('first-party Harness navigation', () => {
   })
 
   it('preserves an explicitly encoded return path, including the original application query', () => {
-    const from = '/novel?chapter=draft%20text'
+    const from = '/workspace/harness-react?draft=unsaved%20text'
     const path = `/settings/personalization?from=${encodeURIComponent(from)}`
     expect(parseFirstPartyNavigationPath(path).pathname).toBe('/settings/personalization')
     const target = new URL(resolveHarnessNavigationPath(path), 'https://mira.invalid')

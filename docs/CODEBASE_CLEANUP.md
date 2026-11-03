@@ -1,12 +1,14 @@
 # 代码库清理记录
 
-日期：2026-10-30。基线提交：`f031b9f`。范围：当前 Mira-Harness 仓库中的 Mira Electron 宿主、Vue Shell 和正式 React Harness。未修改相邻的 Mira-Novel-Studio。
+原清理日期：2026-10-30。原基线提交：`f031b9f`。后续复查：2026-11-03。范围：Mira-Harness 仓库中的 Mira Electron 宿主、Vue Shell 和正式 React Harness。未修改相邻的 Mira-Novel-Studio。
+
+本文是分次清理的历史记录。“原清理结果”“原验证结果”中的文件数量、体积、测试数字和验收结论仅对应原清理批次，不代表当前工作区状态。
 
 Mira 正在准备首个发行安装包。本次直接删除开发阶段废弃实现、旧入口、历史别名和数据升级逻辑，不为未发布版本保留跳转或迁移。当前版本产生的会话、草稿、模型配置和偏好仍正常保存并支持重启恢复。
 
-## 删除结果与依据
+## 原清理结果与依据（2026-10-30）
 
-共删除 437 个 Git 跟踪文件，原文件合计 47.64 MiB；这个数字包含旧测试路径的删除，`layoutMigration.test.ts` 中仍有效的默认设置断言已归入 `platformDefaults.test.ts`。完整路径可通过 `git diff --diff-filter=D --name-only` 查看。
+原批次共删除 437 个 Git 跟踪文件，原文件合计 47.64 MiB；这个数字包含旧测试路径的删除，`layoutMigration.test.ts` 中仍有效的默认设置断言已归入 `platformDefaults.test.ts`。当前未提交差异不能还原该批次的完整删除清单，需结合对应提交历史查看。
 
 | 类别 | 核实依据与处理 |
 | --- | --- |
@@ -35,8 +37,10 @@ Mira 正在准备首个发行安装包。本次直接删除开发阶段废弃实
 - Windows 插件 `docs/wiki` 是 MCP 资源，Swift/PowerShell/C# 是原生能力源码；应用图标通过打包配置和运行时引用，均保留。
 - 生产模块导入链复查中，剩余无普通导入的源码仅为类型声明文件；已核对打包资源、Worker、CSS 与动态资源引用。
 - 未删除或迁移本机用户数据库、会话、密钥、个人 agent 配置。
+- `ModelConfigStore.ensureBuiltinInstances()` 仍保留现行模型配置中旧随机实例 ID 与重复空白默认项的协调逻辑，避免丢失连接、密钥和绑定；这不同于已删除的模型 V1 文档迁移。
+- 旧小说菜单过滤继续用于读取和导入历史配置，防止重新显示已移除页面；应用扩展中的 Mira Novel Studio、Mira Vision 规划入口继续保留。
 
-## 验证结果
+## 原验证结果（对应原清理批次）
 
 - `npm run build` 通过，覆盖 Vue、React、工作流类型检查和 Electron main/preload/renderer 生产构建。
 - 最终存储与界面定向回归：5 文件、138 项全部通过，覆盖首次初始化、配置/会话重开、多目录项目、回收站、侧栏偏好和现行资源标签。
@@ -48,6 +52,20 @@ Mira 正在准备首个发行安装包。本次直接删除开发阶段废弃实
 
 清理前已有 151 项测试失败及 19 个未处理错误。本次保留仍覆盖现行功能的失败测试，不以删除失败断言代替修复；全量测试结果不能视为安装包发布验收。
 
+## 后续清理（2026-11-03）
+
+- 移除旧内置小说模块、专属 IPC/preload、作品存储访问、模型桥和编辑器依赖；已有用户作品数据保留。
+- 删除旧小说接口失去调用方后留下的 HTTP API 注册、Bearer Token 管理及专属测试。回环服务继续承载静态资源与媒体预览，只对应用资源提供 GET、HEAD 和 OPTIONS。
+- 移除关闭流程测试中无用的 API URL 夹具，保留静态资源、媒体预览、关闭流程与旧入口拒绝访问回归。补充应用资源写请求拒绝和本机来源预检测试。
+- 将 7 个有效导航测试文件里的旧业务路由示例替换为现行设置路径或明确的测试应用夹具，不删除仍有效的行为断言。
+- 更新内测指南、插件市场说明和独立小说 SDK 草案；保留未来接入设计，移除要求恢复旧小说入口或旧 HTTP API 的迁移前提。
+
+本轮验证：
+
+- `npm run build -- --skip-tools` 通过，覆盖 Vue/React 类型检查、工作流与 Electron 生产构建；未重建原生工具或制作安装包。
+- 相关 17 个测试文件：16 个通过、1 个失败；710 项通过、3 项失败。失败均在 `desktopShutdown.test.ts`，原因是 Electron mock 缺少现行 `powerSaveBlocker` 导出；使用修改前的 HEAD 测试内容复跑后，同样 3 项失败。本轮只删除其无用 API URL 夹具，保留关闭流程断言，未扩展修复该既有 mock 问题。
+- 本轮未运行全量测试、真实模型调用或 Electron/Windows 实机验收。
+
 ## 复查方式
 
-`git diff --diff-filter=D --name-only` 查看删除清单，`git diff` 查看跟踪文件修改，`git status --short` 查看新增文件。当前改动尚未提交或推送。
+`git status --short` 查看工作区与暂存区状态；`git diff` 查看未暂存修改，`git diff --cached` 查看已暂存修改。未提交删除分别使用 `git diff --diff-filter=D --name-only` 与 `git diff --cached --diff-filter=D --name-only` 查看。已提交清理使用对应提交的 `git show --stat` 或指定提交范围比较，不从本文推断当前是否已提交或推送。

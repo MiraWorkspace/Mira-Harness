@@ -115,7 +115,7 @@ describe('Shell navigation shortcuts', () => {
     documentEvents.dispatchEvent(event); expect(send).not.toHaveBeenCalled()
   })
 
-  it.each(['/novel', '/settings/general', '/workspace/chat', '/workspace/harness-react/nested', '/workspace/harness-react-other'])('does not navigate Harness from %s', path => {
+  it.each(['/fixture-app', '/settings/general', '/settings/plugins', '/workspace/harness-react/nested', '/workspace/harness-react-other'])('does not navigate Harness from %s', path => {
     environment.route.path = path; mount(ActualApp); const { send } = connect()
     expect(key().defaultPrevented).toBe(false); expect(send).not.toHaveBeenCalled()
   })
@@ -221,7 +221,7 @@ describe('Shell navigation controls', () => {
     expect(send).toHaveBeenCalledOnce(); expect(store.state?.busy).toBe(true); expect(arrows().map(node => node.props.disabled)).toEqual([true, true])
     owner.receive(navigationState({ revision: 3, canGoBack: false, canGoForward: true })); await nextTick()
     expect(arrows().map(node => node.props.disabled)).toEqual([true, false])
-    environment.route.path = '/novel'; await nextTick(); expect(arrows()).toHaveLength(0)
+    environment.route.path = '/fixture-app'; await nextTick(); expect(arrows()).toHaveLength(0)
     environment.route.path = '/settings/general'; await nextTick(); expect(arrows()).toHaveLength(0)
     environment.route.path = '/workspace/harness-react'; await nextTick(); expect(arrows()).toHaveLength(2)
     owner.reset(); await nextTick(); expect(arrows()).toHaveLength(0)
@@ -251,7 +251,7 @@ describe('Harness titlebar sidebar controls', () => {
     expect(wrapper().props['aria-hidden']).toBe(true)
     owner.receiveControls({ type: 'mira:harness-controls-state', sidebarOpen: false }); await nextTick()
     expect(labels()).toContain('展开会话侧栏'); expect(wrapper().props['aria-hidden']).toBe(false)
-    environment.route.path = '/novel'; await nextTick()
+    environment.route.path = '/fixture-app'; await nextTick()
     expect(labels()).not.toContain('展开会话侧栏'); expect(labels()).not.toContain('新建任务')
   })
 })

@@ -9,6 +9,24 @@ const servers: LocalMicroAppServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.stop())) })
 
 describe('built-in React Harness resources', () => {
+  it('rejects write requests and only advertises static resource methods to local origins', async () => {
+    const server = new LocalMicroAppServer()
+    servers.push(server)
+    await server.start([])
+    const url = `http://127.0.0.1:${server.port}/apps/sample/generate`
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect((await fetch(url, { method, headers: { Authorization: 'Bearer unused' } })).status).toBe(405)
+    }
+    for (const origin of ['null', 'http://localhost:4173']) {
+      const response = await fetch(url, { method: 'OPTIONS', headers: { Origin: origin } })
+      expect(response.status).toBe(204)
+      expect(response.headers.get('access-control-allow-origin')).toBe(origin)
+      expect(response.headers.get('access-control-allow-methods')).toBe('GET, HEAD, OPTIONS')
+      expect(response.headers.get('access-control-allow-headers')).toBeNull()
+    }
+    expect((await fetch(url, { method: 'OPTIONS', headers: { Origin: 'https://external.example' } })).status).toBe(403)
+  })
+
   it('serves the package root through the loopback micro-app server', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mira-harness-app-'))
     await mkdir(join(root, 'assets'))

@@ -14,13 +14,15 @@
 | Word | python-openxml/python-docx，MIT；Mira 适配脚本 | Python、python-docx 1.2.0 |
 | 演示文档 | scanny/python-pptx，MIT；Mira 适配脚本 | Python、python-pptx 1.0.2 |
 | 电子表格 | jmcnamara/XlsxWriter，BSD-2-Clause；Mira 适配脚本 | Python、XlsxWriter 3.2.9、openpyxl 3.1.5（MIT） |
-| 电脑控制 | CursorTouch/Windows-MCP，MIT | Windows、uvx、Python 3.14；首次启动需要下载 |
-| 浏览器操作 | microsoft/playwright-mcp，Apache-2.0 | Node.js、npx、Chrome；首次启动需要下载 |
+| 电脑控制 | Yu-tao-Li/dsh-computer-use-win、OrderG-X/dsh-mac-computer-use，MIT；Mira 适配 | 随包提供的 Windows/macOS 后端，通过 Electron 的 Node 运行时启动；macOS 原生辅助工具在构建时编译，使用时需要系统权限 |
+| 浏览器操作 | Mira 宿主内置浏览器 MCP | 操作当前任务的 Electron webview；不再运行 npx/Playwright MCP 或启动外部 Chrome |
 | 插件创建器 | OpenAI Skills 创建工作流的 Mira 适配 | Python |
 | 技能创建器 | openai/skills，Apache-2.0 | Python；部分验证脚本需要 PyYAML |
 | Mira 使用指南 | Mira 自有内容 | 无额外依赖 |
 
-详细版本、来源和许可证见 `resources/plugins/UPSTREAM-SOURCES.json` 及各包许可证文件。Python 库和 MCP 服务没有随此改动打包；离线浏览、内置登记不代表所有功能都能离线执行。电脑与浏览器 MCP 必须被选入当前任务才会启动。
+详细版本、来源和许可证见 `resources/plugins/UPSTREAM-SOURCES.json` 及各包许可证文件。电脑控制后端随 `resources/plugins` 分发，浏览器 MCP 由宿主实现；两者必须被选入当前任务才会启动。浏览器能力边界见 [内置浏览器自动化](MIRA_EMBEDDED_BROWSER_AUTOMATION.md)。
+
+办公插件所需 Python、Python 库和 Poppler 是否可用，应按具体发行包核对。打包配置会复制 `resources/python`，但仓库中的该目录目前只有运行时填充说明，不能据此宣称已经提供完整 Python 环境。离线浏览和内置登记不代表所有插件功能都能离线执行。
 
 ## 添加市场
 

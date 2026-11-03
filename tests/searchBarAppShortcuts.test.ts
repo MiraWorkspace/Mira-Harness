@@ -70,7 +70,7 @@ describe('Shell search shortcuts through the mounted Vue component', () => {
   })
 
   it('uses the existing Shell palette outside Harness and retains Escape dismissal', async () => {
-    route.currentRoute.value.path = '/novel'
+    route.currentRoute.value.path = '/settings/plugins'
     const view = await mount()
     await view.key('p', { ctrlKey: true, shiftKey: true })
     expect(view.palette.visible).toBe(true); expect(view.container.querySelectorAll('[role="dialog"]')).toHaveLength(1)

@@ -18,7 +18,7 @@ async function fixture(initial = '/workspace/harness-react') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/', component: { render: () => h(RouterView) }, children: [
       { path: 'workspace/harness-react', name: 'HarnessReact', component: harness },
-      { path: 'novel', component: { render: () => h('p', 'Novel') } },
+      { path: 'fixture-app', component: { render: () => h('p', 'Fixture application') } },
     ] },
     { path: '/settings/:section', component: { setup: () => { const route = useRoute(); return () => h('main', { 'data-settings': true }, route.params.section) } } },
   ] })
@@ -66,10 +66,10 @@ describe('Harness settings round trips', () => {
 
   it('releases the retained workbench when leaving settings for another application', async () => {
     const view = await fixture()
-    await view.go('/settings/general'); await view.go('/novel')
+    await view.go('/settings/general'); await view.go('/fixture-app')
     expect(view.unmounted).toHaveBeenCalledOnce()
     expect(view.container.querySelector('iframe')).toBeNull()
-    expect(view.container.textContent).toBe('Novel')
+    expect(view.container.textContent).toBe('Fixture application')
   })
 
   it('opens settings directly without mounting a background workbench', async () => {
