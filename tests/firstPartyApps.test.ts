@@ -3,29 +3,33 @@ import { resolveFirstPartyAppManifest, validateFirstPartyAppManifest, type First
 import type { MicroApp } from '../src/types'
 
 const manifest: FirstPartyAppManifest = {
-  appId: 'mira-novel-studio',
+  appId: 'sample-app',
 
   enabled: false,
-  trustedSource: { type: 'github-release', repository: 'ChatWw/Mira-Novel-Studio', releaseTag: 'v0.1.0', sha256: 'a'.repeat(64) },
+  trustedSource: { type: 'github-release', repository: 'example/sample-app', releaseTag: 'v0.1.0', sha256: 'a'.repeat(64) },
   entry: { path: 'index.html' },
   shellCompatibility: { minVersion: '0.0.10' },
   apiCompatibility: { major: 1 },
-  capabilities: ['storage:novel-projects'],
+  capabilities: [],
   developmentOverride: { enabled: false, entry: 'http://127.0.0.1:4173' },
 }
 
 const builtinManifest: FirstPartyAppManifest = {
   ...manifest,
   enabled: true,
-  trustedSource: { type: 'builtin', packagePath: 'novel-studio' },
+  trustedSource: { type: 'builtin', packagePath: 'sample-app' },
 }
 const builtinApp = {
-  id: 'micro-mira-novel-studio',
-  code: 'mira-novel-studio',
-  entry: { type: 'builtin', package: 'novel-studio' },
+  id: 'micro-sample-app',
+  code: 'sample-app',
+  entry: { type: 'builtin', package: 'sample-app' },
 } as MicroApp
 
 describe('first-party application manifest contract', () => {
+  it.each(['models:text.generate', 'storage:novel-projects'])('rejects the retired capability %s', capability => {
+    expect(() => validateFirstPartyAppManifest({ ...manifest, capabilities: [capability as never] })).toThrow('能力白名单无效')
+  })
+
   it('accepts the versioned identity, source, entry, compatibility, and capability fields', () => {
     expect(validateFirstPartyAppManifest(manifest)).toBe(manifest)
   })

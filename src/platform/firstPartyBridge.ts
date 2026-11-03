@@ -1,6 +1,4 @@
 import { PLATFORM_API_VERSION, type FirstPartyAppManifest } from '@/config/firstPartyApps'
-import type { ModelSelection } from '@/config/harness'
-import type { NovelProjectDocument } from '@/config/novel'
 import type { PlatformApi, PlatformContext } from '@/types'
 import { parseFirstPartyHarnessCall } from './firstPartyHarness'
 import { FirstPartyNavigationError, parseFirstPartyNavigationPath } from './firstPartyNavigation'
@@ -306,39 +304,6 @@ export async function handleFirstPartyRequest(options: {
         throw new FirstPartyBridgeError('NAVIGATION_FAILED', '页面切换失败，请稍后重试')
       }
       return null
-    }
-    case 'models.generateText': {
-      requireCapability(manifest, 'models:text.generate')
-      const params = record(request.params)
-      const role = params.role
-      if (role !== 'authoring' && role !== 'automation') throw new FirstPartyBridgeError('INVALID_REQUEST', '模型职责无效')
-      const prompt = nonEmptyString(params.prompt, '模型请求内容', 100_000)
-      const rawSelection = record(params.selection)
-      const selection: ModelSelection = {
-        providerId: nonEmptyString(rawSelection.providerId, '供应商 ID'),
-        modelId: nonEmptyString(rawSelection.modelId, '模型 ID'),
-      }
-      try {
-        return await api.generateFirstPartyText(grantId, role, prompt, selection)
-      } catch (error) {
-        throw new FirstPartyBridgeError('MODEL_REQUEST_FAILED', error instanceof Error ? error.message : '模型请求失败')
-      }
-    }
-    case 'novel.list':
-      requireCapability(manifest, 'storage:novel-projects')
-      if (manifest.appId !== 'mira-novel-studio') throw new FirstPartyBridgeError('CAPABILITY_DENIED', '应用不能读取小说作品')
-      return api.listFirstPartyNovelProjects(grantId)
-    case 'novel.get':
-      requireCapability(manifest, 'storage:novel-projects')
-      if (manifest.appId !== 'mira-novel-studio') throw new FirstPartyBridgeError('CAPABILITY_DENIED', '应用不能读取小说作品')
-      return api.getFirstPartyNovelProject(grantId, nonEmptyString(record(request.params).id, '作品 ID'))
-    case 'novel.save': {
-      requireCapability(manifest, 'storage:novel-projects')
-      if (manifest.appId !== 'mira-novel-studio') throw new FirstPartyBridgeError('CAPABILITY_DENIED', '应用不能保存小说作品')
-      const project = record(record(request.params).project)
-      if (project.version !== 1 || typeof project.title !== 'string') throw new FirstPartyBridgeError('INVALID_REQUEST', '小说作品格式无效')
-      nonEmptyString(project.id, '作品 ID')
-      return api.saveFirstPartyNovelProject(grantId, project as unknown as NovelProjectDocument)
     }
     case 'preferences.get': {
       const key = nonEmptyString(record(request.params).key, '偏好键名')

@@ -146,24 +146,9 @@ export interface PlatformApi {
   updateMicroApps(apps: MicroApp[]): Promise<PlatformSnapshot>
   selectMicroAppDirectory(): Promise<string | null>
   resolveLocalMicroAppUrl(appId: string): Promise<string>
-  getNovelApiBaseUrl(): Promise<string>
   createFirstPartyGrant(appId: string): Promise<string>
   revokeFirstPartyGrant(grantId: string): Promise<void>
-  generateFirstPartyText(grantId: string, role: import('@/config/novel').NovelModelRole, prompt: string, selection: import('@/config/harness').ModelSelection): Promise<string>
-  listFirstPartyNovelProjects(grantId: string): Promise<import('@/config/novel').NovelProjectSummary[]>
-  getFirstPartyNovelProject(grantId: string, id: string): Promise<import('@/config/novel').NovelProjectDocument>
-  saveFirstPartyNovelProject(grantId: string, project: import('@/config/novel').NovelProjectDocument): Promise<import('@/config/novel').NovelProjectDocument>
   invokeFirstPartyHarness(grantId: string, method: string, params?: unknown): Promise<unknown>
-  testNovelModelConnection(role: import('@/config/novel').NovelModelRole, prompt?: string): Promise<{ ok: boolean; text: string }>
-  listNovelProjects(): Promise<import('@/config/novel').NovelProjectSummary[]>
-  getNovelProject(id: string): Promise<import('@/config/novel').NovelProjectDocument>
-  createNovelProject(title?: string): Promise<import('@/config/novel').NovelProjectDocument>
-  saveNovelProject(project: import('@/config/novel').NovelProjectDocument): Promise<import('@/config/novel').NovelProjectDocument>
-  deleteNovelProject(id: string): Promise<void>
-  exportNovelProject(id: string): Promise<string>
-  importNovelProject(raw: string): Promise<import('@/config/novel').NovelProjectDocument>
-  getNovelWorkspaceSettings(): Promise<import('@/config/novel').NovelWorkspaceSettings>
-  saveNovelWorkspaceSettings(settings: import('@/config/novel').NovelWorkspaceSettings): Promise<import('@/config/novel').NovelWorkspaceSettings>
   exportSnapshot(): Promise<string>
   importSnapshot(snapshot: string): Promise<PlatformSnapshot>
   restoreDefaults(): Promise<PlatformSnapshot>

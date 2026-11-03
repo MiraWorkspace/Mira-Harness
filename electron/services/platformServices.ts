@@ -1,6 +1,5 @@
 import { PlatformDatabase } from '../storage/database'
 import { LocalMicroAppServer } from '../adapters/localMicroAppServer'
-import { createNovelApiHandler } from '../adapters/novelApi'
 import { electronWebRequest } from '../adapters/electronWebRequest'
 import { HarnessRuntime } from './harnessRuntime'
 import { resolveMiraRipgrepPath } from './miraRuntimeTools'
@@ -29,7 +28,6 @@ export interface PlatformServices {
   workspaceMedia: MiraWorkspaceMedia
   database: PlatformDatabase
   localMicroAppServer: LocalMicroAppServer
-  legacyNovelApiToken: string
   harnessRuntime: HarnessRuntime
   miraFlowController: MiraFlowController
   mcpConfigStore: McpConfigStore
@@ -85,15 +83,13 @@ export async function createPlatformServices({ miraPaths, publishHarnessEvent }:
   const localMicroAppServer = new LocalMicroAppServer({
     mediaHandler: (id, request, response) => { void workspaceMedia.handle(id, request, response) },
     builtinRoots: { 'harness-react-app': app.isPackaged ? join(process.resourcesPath, 'harness-react-app') : resolve(app.getAppPath(), 'dist/harness-react-app') },
-    apiHandlers: new Map([['novel', { capability: 'models:text.generate', handle: createNovelApiHandler(database) }]]),
   })
   const preferences = database.getSnapshot().preferences
   const preferredPort = typeof preferences.localMicroAppPort === 'number' ? preferences.localMicroAppPort : undefined
   await localMicroAppServer.start(database.getSnapshot().microApps, preferredPort)
-  const legacyNovelApiToken = localMicroAppServer.issueApiToken('novel', ['models:text.generate'])
   if (localMicroAppServer.port && preferences.localMicroAppPort !== localMicroAppServer.port) {
     database.savePreference('localMicroAppPort', localMicroAppServer.port)
   }
 
-  return { computerSettings, workspaceHtml, workspaceMedia, database, localMicroAppServer, legacyNovelApiToken, harnessRuntime, miraFlowController, mcpConfigStore, mcpManager, mcpAuthorization, automationScheduler, skillMarketplace, cleanupExpiredTrash }
+  return { computerSettings, workspaceHtml, workspaceMedia, database, localMicroAppServer, harnessRuntime, miraFlowController, mcpConfigStore, mcpManager, mcpAuthorization, automationScheduler, skillMarketplace, cleanupExpiredTrash }
 }

@@ -210,7 +210,7 @@ sequenceDiagram
 ```text
 apps/harness-react/    React workspace, LAN client, and host bridge
 electron/              Main process, preload, IPC, execution, and storage
-src/                   Vue shell, settings, novel pages, and shared contracts
+src/                   Vue shell, settings, and shared contracts
 packages/              Workflow compiler (mira-flow-kit) and runtime (mira-flow-runtime)
 resources/             Bundled plugins and runtime resources
 scripts/               Build and installation preparation scripts

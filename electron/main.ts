@@ -3,7 +3,6 @@ import { join, resolve } from 'node:path'
 import { createPlatformServices, type PlatformServices } from './services/platformServices'
 import { registerPlatformIpcHandlers } from './ipc/platformIpc'
 import { registerWindowIpcHandlers } from './ipc/windowIpc'
-import { registerNovelIpcHandlers } from './ipc/novelIpc'
 import { registerAutomationIpcHandlers } from './ipc/automationIpc'
 import { registerMcpIpcHandlers } from './ipc/mcpIpc'
 import { registerModelIpcHandlers } from './ipc/modelIpc'
@@ -85,7 +84,7 @@ app.whenReady().then(async () => {
     const enabled = services.database.getSnapshot().preferences.keepComputerAwake === true
     keepAwake.update(enabled, enabled)
   }, 1000)
-  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, legacyNovelApiToken: services.legacyNovelApiToken, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler })
+  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler })
   ipcMain.handle('mira:browser-bind', (event, sessionId, browserId, guestId) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error('浏览器绑定仅允许主窗口调用')
     if (typeof sessionId !== 'string' || typeof browserId !== 'string' || !Number.isSafeInteger(guestId)) throw new Error('浏览器绑定参数无效')
@@ -95,7 +94,6 @@ app.whenReady().then(async () => {
     miraBrowserAutomation.bind(event.sender, sessionId, browserId, guest)
   })
   registerMiraFlowIpc({ flows: services.miraFlowController })
-  registerNovelIpcHandlers({ database: services.database })
   registerAutomationIpcHandlers({ database: services.database, automationScheduler: services.automationScheduler, cleanupExpiredTrash: services.cleanupExpiredTrash })
   registerMcpIpcHandlers({ mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, database: services.database, mcpAuthorization: services.mcpAuthorization })
   registerModelIpcHandlers({ database: services.database })
@@ -105,7 +103,7 @@ app.whenReady().then(async () => {
   // Windows uses application-drawn controls, so theme transitions no longer touch native title-bar chrome.
   registerWindowIpcHandlers()
   setupApplicationMenu()
-  createMainWindow({ getStartupWindowBehavior: () => services?.database.getSnapshot().preferences.startupWindowBehavior, getMainWindowState: () => services?.database.getSnapshot().preferences.mainWindowState as import('./bootstrap/windowManager').MainWindowState | undefined, saveMainWindowState: state => services?.database.savePreference('mainWindowState', state), getCloseWindowBehavior, isQuitting: () => isQuitting, getDesktopZoomLevel: () => services?.database.getSnapshot().preferences.desktopZoomLevel, saveDesktopZoomLevel: level => services?.database.savePreference('desktopZoomLevel', level), legacyNovelApi: { baseUrl: services.localMicroAppServer.getApiBaseUrl('novel'), token: services.legacyNovelApiToken } })
+  createMainWindow({ getStartupWindowBehavior: () => services?.database.getSnapshot().preferences.startupWindowBehavior, getMainWindowState: () => services?.database.getSnapshot().preferences.mainWindowState as import('./bootstrap/windowManager').MainWindowState | undefined, saveMainWindowState: state => services?.database.savePreference('mainWindowState', state), getCloseWindowBehavior, isQuitting: () => isQuitting, getDesktopZoomLevel: () => services?.database.getSnapshot().preferences.desktopZoomLevel, saveDesktopZoomLevel: level => services?.database.savePreference('desktopZoomLevel', level) })
   setupWindowsTray()
   app.on('activate', () => { if (!isQuitting) showMainWindow() })
 })

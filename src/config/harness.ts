@@ -1048,8 +1048,6 @@ export interface AutomationOverview {
 
 export interface ModelRoleBinding {
   agentDefault?: { providerId: string, modelId: string }
-  novelAuthoring?: { providerId: string, modelId: string }
-  novelAutomation?: { providerId: string, modelId: string }
 }
 
 export interface PermissionConfig {

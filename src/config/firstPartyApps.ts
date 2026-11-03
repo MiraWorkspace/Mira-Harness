@@ -5,7 +5,7 @@ export type FirstPartyAppSource =
   | { type: 'builtin'; packagePath: string }
   | { type: 'github-release'; repository: string; releaseTag: string; sha256: string }
 
-export const FIRST_PARTY_CAPABILITIES = ['models:text.generate', 'storage:novel-projects', 'harness:workbench'] as const
+export const FIRST_PARTY_CAPABILITIES = ['harness:workbench'] as const
 export type FirstPartyCapability = typeof FIRST_PARTY_CAPABILITIES[number]
 export const PLATFORM_API_VERSION = { major: 1, minor: 0 } as const
 

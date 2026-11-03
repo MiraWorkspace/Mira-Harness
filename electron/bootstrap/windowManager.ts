@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { shouldBlockReloadShortcut } from '../windowShortcuts'
 import { isTrustedShellNavigation } from '../security/shellNavigation'
-import { shouldAuthorizeLegacyNovelApiRequest } from '../security/legacyNovelApiAuth'
 import { HOSTED_BROWSER_PARTITION, isAllowedHostedBrowserUrl } from '../security/hostedBrowser'
 import { alignMiraTrafficLights, applyMiraZoom, miraTrafficLightPosition, miraZoomLevel } from './miraDesktopZoom'
 
@@ -18,7 +17,6 @@ export interface WindowManagerOptions {
   saveMainWindowState?: (state: MainWindowState) => void
   getCloseWindowBehavior: () => 'background' | 'quit'
   isQuitting: () => boolean
-  legacyNovelApi: { baseUrl: string; token: string }
   getDesktopZoomLevel?: () => unknown
   saveDesktopZoomLevel?: (level: number) => void
 }
@@ -173,13 +171,6 @@ export function createMainWindow(options: WindowManagerOptions) {
   })
   const rendererPath = join(__dirname, '../renderer/index.html')
   const shellUrl = process.env.ELECTRON_RENDERER_URL || pathToFileURL(rendererPath).href
-  const legacyNovelApi = options.legacyNovelApi
-  window.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`${legacyNovelApi.baseUrl}*`] }, (details, callback) => {
-    if (shouldAuthorizeLegacyNovelApiRequest(details, window.webContents.id, window.webContents.mainFrame, shellUrl)) {
-      details.requestHeaders.Authorization = `Bearer ${legacyNovelApi.token}`
-    }
-    callback({ requestHeaders: details.requestHeaders })
-  })
   window.webContents.on('will-navigate', event => {
     if (!isTrustedShellNavigation(event.url, shellUrl)) event.preventDefault()
   })

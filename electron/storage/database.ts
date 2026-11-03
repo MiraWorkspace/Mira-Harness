@@ -1,13 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
-import {
-  AI_NOVEL_MENU,
-  mainMenus as defaultsMenus,
-  PROTECTED_MAIN_MENU_IDS,
-} from '../../src/config/menus'
+import { mainMenus as defaultsMenus } from '../../src/config/menus'
 import { microApps as defaultMicroApps, withBuiltInMicroApps } from '../../src/config/microApps'
-import { NovelStore } from './novelStore'
 import { HarnessStore } from './harnessStore'
 import { HarnessGoalStore } from './harnessGoalStore'
 import { MiraFlowJournal } from './miraFlowJournal'
@@ -27,46 +22,26 @@ import { MiraPromptHistoryStore } from './miraPromptHistory'
 import { AutomationStore } from './automationStore'
 import { MiraPaths } from './miraPaths'
 import { validateSnapshot } from '../../src/config/platformValidation'
-import { DEFAULT_ASSISTANT_TONE, isModelProviderAvailable, type HarnessHistoryPage, type HarnessHistoryQuery, type HarnessUsageStats } from '../../src/config/harness'
+import { DEFAULT_ASSISTANT_TONE, type HarnessHistoryPage, type HarnessHistoryQuery, type HarnessUsageStats } from '../../src/config/harness'
 import type { MenuItem, MicroApp, PlatformSnapshot } from '../../src/types'
 
-const PROTECTED_MENU_ID_SET = new Set(PROTECTED_MAIN_MENU_IDS)
 const DEFAULT_PREFERENCES = { loadingStyle: 'cube-grid', showContextUsage: true, sendShortcut: 'enter', assistantTone: DEFAULT_ASSISTANT_TONE }
 const HARNESS_COMPOSER_PREFERENCE = 'first-party.mira-harness.harness-react-composer-drafts'
 const HARNESS_SIDEBAR_PREFERENCE = 'first-party.mira-harness.session-drawer'
 
 function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T }
 
-function removeProtectedMenus(menus: MenuItem[]): MenuItem[] {
+// 旧配置仍可能携带已移除的内置页面；只过滤该页面，保留其他菜单。
+function removeRetiredNovelMenus(menus: MenuItem[]): MenuItem[] {
   return menus
-    .filter(menu => !PROTECTED_MENU_ID_SET.has(menu.id))
-    .map(menu => ({ ...menu, children: menu.children ? removeProtectedMenus(menu.children) : undefined }))
-}
-
-export function normalizeProtectedMainMenus(menus: MenuItem[]): MenuItem[] {
-  return [clone(AI_NOVEL_MENU), ...removeProtectedMenus(clone(menus))]
-}
-
-function stableSerialize(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`
-  }
-  return JSON.stringify(value) ?? 'undefined'
-}
-
-function assertProtectedMenus(menus: MenuItem[]) {
-  const novel = menus.find(menu => menu.id === AI_NOVEL_MENU.id)
-  if (stableSerialize(novel) !== stableSerialize(AI_NOVEL_MENU)) {
-    throw new Error('AI 小说创作为内置菜单，不能修改或删除')
-  }
+    .filter(menu => menu.id !== 'ai-novel' && !(menu.target?.type === 'component' && menu.target.componentKey === 'aiNovel'))
+    .map(menu => ({ ...menu, ...(menu.children ? { children: removeRetiredNovelMenus(menu.children) } : {}) }))
 }
 
 export class PlatformDatabase {
   private readonly database: Database.Database
   private readonly filePath: string
   private readonly paths: MiraPaths
-  readonly novels: NovelStore
   readonly harness: HarnessStore
   readonly goals: HarnessGoalStore
   readonly flowJournal: MiraFlowJournal
@@ -91,7 +66,6 @@ export class PlatformDatabase {
     this.paths.ensure()
     this.filePath = this.paths.stateDatabase()
     this.database = new Database(this.filePath)
-    this.novels = new NovelStore(this.database)
     this.models = new ModelConfigStore(this.paths)
     this.harness = new HarnessStore(this.database, this.paths)
     this.goals = new HarnessGoalStore(this.database)
@@ -266,8 +240,6 @@ export class PlatformDatabase {
       CREATE TABLE IF NOT EXISTS micro_apps (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS harness_input_history (workspace_key TEXT PRIMARY KEY, payload TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS novel_projects (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, payload TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS novel_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS harness_projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'FolderOpened', roots TEXT NOT NULL DEFAULT '[]', directory TEXT NOT NULL UNIQUE, default_model_provider_id TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_session_at INTEGER);
       CREATE TABLE IF NOT EXISTS harness_sessions (id TEXT PRIMARY KEY, project_id TEXT, title TEXT NOT NULL, model_provider_id TEXT, model_id TEXT, permission_mode TEXT NOT NULL, status TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, unread INTEGER NOT NULL DEFAULT 0, archived_at INTEGER, draft_state TEXT, parent_session_id TEXT, sort_order INTEGER NOT NULL DEFAULT 0, path TEXT NOT NULL, working_directory TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS harness_session_state (session_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL);
@@ -300,16 +272,6 @@ export class PlatformDatabase {
       this.writeSnapshot({ mainMenus: clone(defaultsMenus), microApps: clone(defaultMicroApps), preferences: clone(DEFAULT_PREFERENCES) })
       this.database.prepare('INSERT INTO meta(key, value) VALUES (?, ?)').run('seeded', '1')
     }
-    let workspaceSettings = this.novels.getSettings()
-    if (workspaceSettings.modelSelection) {
-      const provider = this.models.get(workspaceSettings.modelSelection.providerId)
-      if (!provider) workspaceSettings = this.novels.saveSettings({ ...workspaceSettings, modelSelection: undefined })
-    }
-    if (!workspaceSettings.modelSelection) {
-      const provider = this.models.list().find(item => isModelProviderAvailable(item))
-      const model = provider?.models.find(item => item.enabled)
-      if (provider && model) this.novels.saveSettings({ ...workspaceSettings, modelSelection: { providerId: provider.id, modelId: model.id } })
-    }
     const insertPreference = this.database.prepare('INSERT OR IGNORE INTO preferences(key, value) VALUES (?, ?)')
     Object.entries(DEFAULT_PREFERENCES).forEach(([key, value]) => insertPreference.run(key, JSON.stringify(value)))
   }
@@ -318,13 +280,12 @@ export class PlatformDatabase {
     const mainMenus = this.database.prepare('SELECT payload FROM menus ORDER BY rowid').all().map((row: { payload: string }) => JSON.parse(row.payload)) as MenuItem[]
     const microApps = this.database.prepare('SELECT payload FROM micro_apps ORDER BY rowid').all().map((row: { payload: string }) => JSON.parse(row.payload)) as MicroApp[]
     const preferences = Object.fromEntries(this.database.prepare('SELECT key, value FROM preferences').all().map((row: { key: string; value: string }) => [row.key, JSON.parse(row.value)]))
-    return { mainMenus, microApps: withBuiltInMicroApps(microApps), preferences }
+    return { mainMenus: removeRetiredNovelMenus(mainMenus), microApps: withBuiltInMicroApps(microApps), preferences }
   }
 
   private writeSnapshot(snapshot: PlatformSnapshot) {
-    snapshot = { ...snapshot, microApps: withBuiltInMicroApps(snapshot.microApps) }
+    snapshot = { ...snapshot, mainMenus: removeRetiredNovelMenus(snapshot.mainMenus), microApps: withBuiltInMicroApps(snapshot.microApps) }
     validateSnapshot(snapshot)
-    assertProtectedMenus(snapshot.mainMenus)
     const write = this.database.transaction(() => {
       this.database.prepare('DELETE FROM menus').run()
       this.database.prepare('DELETE FROM micro_apps').run()
@@ -418,9 +379,8 @@ export class PlatformDatabase {
     let snapshot: PlatformSnapshot
     try { snapshot = JSON.parse(raw) as PlatformSnapshot } catch { throw new Error('导入文件不是有效 JSON') }
     if (!snapshot || !Array.isArray(snapshot.mainMenus) || !Array.isArray(snapshot.microApps)) throw new Error('配置快照格式无效')
-    snapshot = { ...snapshot, mainMenus: normalizeProtectedMainMenus(snapshot.mainMenus) }
+    snapshot = { ...snapshot, mainMenus: removeRetiredNovelMenus(snapshot.mainMenus) }
     validateSnapshot(snapshot)
-    assertProtectedMenus(snapshot.mainMenus)
     this.backup()
     const write = this.database.transaction(() => {
       this.writeSnapshot(snapshot)

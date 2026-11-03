@@ -1,9 +1,7 @@
-import { BUILT_IN_PAGE_OPTIONS, RESERVED_MENU_PATH_PREFIXES, RESERVED_MENU_PATHS } from './menus'
+import { RESERVED_MENU_PATH_PREFIXES, RESERVED_MENU_PATHS } from './menus'
 import { isBuiltInMicroAppPackage } from './microApps'
 import { assertComposerFollowupMode } from './composerPreferences'
 import type { MenuItem, MicroApp, PlatformSnapshot } from '@/types'
-
-const BUILT_IN_PAGE_KEYS = new Set(BUILT_IN_PAGE_OPTIONS.map(option => option.value))
 
 export function flattenMenus(items: MenuItem[]): MenuItem[] {
   return items.flatMap(item => [item, ...(item.children ? flattenMenus(item.children) : [])])
@@ -38,7 +36,7 @@ export function validateMenus(menus: MenuItem[], appCode: string | null = null) 
     if (menu.keepAlive !== undefined && typeof menu.keepAlive !== 'boolean') throw new Error('页面保活配置必须为布尔值')
     if (menu.type === 'dir' && menu.keepAlive !== undefined) throw new Error('目录菜单不能配置页面保活')
     if (menu.target?.type === 'iframe') assertHttpUrl(menu.target.url, 'iframe 地址')
-    if (menu.target?.type === 'component' && !BUILT_IN_PAGE_KEYS.has(menu.target.componentKey as typeof BUILT_IN_PAGE_OPTIONS[number]['value'])) {
+    if (menu.target?.type === 'component') {
       throw new Error('本地页面必须来自内置页面清单')
     }
     if (appCode && menu.target && menu.target.type !== 'microapp') throw new Error('微应用页面菜单必须使用微应用目标')

@@ -162,7 +162,7 @@ export class ModelConfigStore {
       const parsed = JSON.parse(readFileSync(this.configPath, 'utf8')) as Partial<ModelConfigDocument>
       const providers = Array.isArray(parsed.providers) ? parsed.providers.map(normalizeProvider).filter((provider): provider is JsonProviderRecord => Boolean(provider)) : []
       const services = Array.isArray(parsed.services) ? parsed.services.map(service => ({ ...service })) : []
-      return { version: 2, providers, services, bindings: parsed.bindings && typeof parsed.bindings === 'object' ? parsed.bindings : {} }
+      return { version: 2, providers, services, bindings: parsed.bindings?.agentDefault ? { agentDefault: parsed.bindings.agentDefault } : {} }
     } catch {
       return { version: 2, providers: [], bindings: {} }
     }

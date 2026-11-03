@@ -39,7 +39,6 @@ beforeEach(() => { electron.menu = []; electron.focused = undefined; vi.clearAll
 it('opens web and email links in the system handler without creating a window or accepting other protocols', () => {
   const window = createMainWindow({
     getCloseWindowBehavior: () => 'quit', isQuitting: () => false,
-    legacyNovelApi: { baseUrl: 'http://127.0.0.1:1234/', token: 'test' },
   })
   const open = (window.webContents.setWindowOpenHandler as any).mock.calls[0][0]
   for (const url of ['https://github.com/ChatWw/Mira-Harness', 'http://example.com', 'mailto:tuyn53@163.com']) {
@@ -55,7 +54,6 @@ it('reapplies the latest saved zoom after every main-page reload rather than the
   let level: unknown = 1
   const window = createMainWindow({
     getCloseWindowBehavior: () => 'quit', isQuitting: () => false,
-    legacyNovelApi: { baseUrl: 'http://127.0.0.1:1234/', token: 'test' },
     getDesktopZoomLevel: () => level,
   })
   expect((window as any).options.webPreferences.zoomFactor).toBeCloseTo(1.1)
@@ -134,7 +132,6 @@ it.each([-3, 0, 2, 5])('centers native macOS traffic lights on the scaled header
   const factor = 1.1 ** level
   const window = createMainWindow({
     getCloseWindowBehavior: () => 'quit', isQuitting: () => false,
-    legacyNovelApi: { baseUrl: 'http://127.0.0.1:1234/', token: 'test' },
     getDesktopZoomLevel: () => level,
   })
   expect((window as any).options.trafficLightPosition).toEqual(miraTrafficLightPosition(factor))
@@ -173,7 +170,7 @@ it('shares the About dialog across native menu and command while retaining the s
 })
 
 it('maximizes by default and restores saved normal bounds only when selected', () => {
-  const options = { getCloseWindowBehavior: () => 'quit' as const, isQuitting: () => false, legacyNovelApi: { baseUrl: 'http://127.0.0.1/', token: 'test' } }
+  const options = { getCloseWindowBehavior: () => 'quit' as const, isQuitting: () => false }
   const first = createMainWindow(options)
   ;(first.once as any).mock.calls.find(([event]: any[]) => event === 'ready-to-show')[1]()
   expect(first.maximize).toHaveBeenCalledOnce()

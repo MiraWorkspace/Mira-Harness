@@ -25,6 +25,18 @@ afterEach(() => {
 })
 
 describe('ModelConfigStore', () => {
+  it('ignores retired novel roles while preserving the agent binding and its credentials', () => {
+    const { store, directory } = createStore()
+    const provider = store.save({ providerKey: 'custom', name: 'Provider', endpoint: 'https://example.com', apiKey: 'keep-key', models: [model('current')], enabled: true })
+    const selection = { providerId: provider.id, modelId: 'current' }
+    const document = JSON.parse(readFileSync(store.path(), 'utf8'))
+    document.bindings = { agentDefault: selection, novelAuthoring: selection, novelAutomation: selection }
+    writeFileSync(store.path(), JSON.stringify(document))
+    const reopened = new ModelConfigStore(new MiraPaths(directory))
+    expect(reopened.bindings()).toEqual({ agentDefault: selection })
+    expect(reopened.getSecret(provider.id)).toBe('keep-key')
+  })
+
   it('persists model display names and independent token limits without replacing custom values', () => {
     const { store, directory } = createStore()
     const configured = { ...model('custom-model'), name: '我的模型', contextWindow: 8192, maxInputTokens: 7000, maxTokens: 1234, multimodal: false }
@@ -155,15 +167,14 @@ describe('ModelConfigStore', () => {
     const credential = store.save({ ...store.get(international.id)!, apiKey: 'current-key', models: [model('current')], enabled: true })
     const oldCredential = store.save({ ...international, id: 'old-credential', builtin: true, apiKey: 'old-key', models: [model('old')], enabled: true })
     const oldEmpty = store.save({ ...kimi, id: 'old-bound', builtin: true, models: [], enabled: false })
-    const bound = store.get(kimi.id)!
-    store.saveBindings({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' }, novelAuthoring: { providerId: bound.id, modelId: 'previous-model' } })
+    store.saveBindings({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' } })
     const manual = store.save({ ...domestic, id: 'manual', builtin: false, models: [], enabled: false })
     store.ensureBuiltinInstances()
-    for (const record of [edited, credential, oldCredential, oldEmpty, bound, manual]) expect(store.get(record.id)).toEqual(record)
+    for (const record of [edited, credential, oldCredential, oldEmpty, manual]) expect(store.get(record.id)).toEqual(record)
     expect(store.get(emptyDuplicate.id)).toBeUndefined()
     expect(store.getSecret(credential.id)).toBe('current-key')
     expect(store.getSecret(oldCredential.id)).toBe('old-key')
-    expect(store.bindings()).toEqual({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' }, novelAuthoring: { providerId: bound.id, modelId: 'previous-model' } })
+    expect(store.bindings()).toEqual({ agentDefault: { providerId: oldEmpty.id, modelId: 'previous-model' } })
   })
 
   it.each([false, true])('deletes a manual service with children=%s, its connections and role bindings', expanded => {
@@ -171,7 +182,7 @@ describe('ModelConfigStore', () => {
     const root = store.save({ providerKey: 'custom', slug: 'myProvider', builtin: true, serviceName: '我的服务商', name: '我的服务商', endpoint: 'https://example.com', apiKey: 'root-key', models: [model('root-model')], enabled: true })
     const child = expanded ? store.save({ providerKey: 'custom', slug: 'myProvider', asInstance: true, name: '项目实例', endpoint: root.endpoint, apiKey: 'child-key', models: [model('child-model')], enabled: true }) : root
     const other = store.save({ providerKey: 'custom', slug: 'other', builtin: true, serviceName: '其他服务商', name: '其他服务商', endpoint: root.endpoint, apiKey: 'other-key', models: [model('other-model')], enabled: true })
-    store.saveBindings({ agentDefault: { providerId: root.id, modelId: 'root-model' }, novelAuthoring: { providerId: child.id, modelId: 'child-model' }, novelAutomation: { providerId: other.id, modelId: 'other-model' } })
+    store.saveBindings({ agentDefault: { providerId: child.id, modelId: 'child-model' } })
     store.deleteService('myProvider')
     const reopened = new ModelConfigStore(new MiraPaths(directory))
     expect(reopened.list()).toEqual([other])
@@ -179,7 +190,7 @@ describe('ModelConfigStore', () => {
     expect(reopened.getSecret(root.id)).toBe('')
     expect(reopened.getSecret(child.id)).toBe('')
     expect(reopened.getSecret(other.id)).toBe('other-key')
-    expect(reopened.bindings()).toEqual({ novelAutomation: { providerId: other.id, modelId: 'other-model' } })
+    expect(reopened.bindings()).toEqual({})
     expect(JSON.parse(readFileSync(reopened.path(), 'utf8')).bindings).toEqual(reopened.bindings())
   })
 

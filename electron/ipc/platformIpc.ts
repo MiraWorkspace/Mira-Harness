@@ -12,9 +12,7 @@ import type { McpConfigStore } from '../storage/mcpConfigStore'
 import type { MicroApp } from '../../src/types'
 import { invokeMiraFlowRequest, type MiraFlowRequestPort } from './miraFlowIpc'
 import { firstPartyAppManifests, validateFirstPartyAppManifest, type FirstPartyAppManifest } from '../../src/config/firstPartyApps'
-import type { ModelSelection } from '../../src/config/harness'
 import { assertComposerFollowupMode, resolveComposerFollowupMode } from '../../src/config/composerPreferences'
-import type { NovelProjectDocument } from '../../src/config/novel'
 import { FirstPartyGrantStore } from '../security/firstPartyGrant'
 import { parseFirstPartyHarnessCall, type HarnessAttachmentSaveResult } from '../../src/platform/firstPartyHarness'
 import type { HarnessRuntime } from '../services/harnessRuntime'
@@ -44,10 +42,8 @@ export interface PlatformIpcDependencies {
   database: PlatformDatabase
   harnessRuntime?: HarnessRuntime
   localMicroAppServer: LocalMicroAppServer
-  legacyNovelApiToken?: string
   firstPartyManifests?: readonly FirstPartyAppManifest[]
   firstPartyGrantStore?: FirstPartyGrantStore
-  fetchImpl?: typeof fetch
   terminalSessions?: HarnessTerminalSessions
   workspaceWatch?: HarnessWorkspaceWatch
   mcpConfigStore?: McpConfigStore
@@ -65,19 +61,19 @@ function requireMainFrame(event: { senderFrame?: { parent: unknown } }) {
   if (event.senderFrame?.parent) throw new Error('第一方授权只能由宿主主页面申请')
 }
 
-function resolveFirstPartyGrant(event: { sender: { id: number }; senderFrame?: { parent: unknown } }, grantId: unknown, firstPartyGrantStore: FirstPartyGrantStore, firstPartyManifests: readonly FirstPartyAppManifest[], capability: FirstPartyAppManifest['capabilities'][number], appId = 'mira-novel-studio') {
+function resolveFirstPartyGrant(event: { sender: { id: number }; senderFrame?: { parent: unknown } }, grantId: unknown, firstPartyGrantStore: FirstPartyGrantStore, firstPartyManifests: readonly FirstPartyAppManifest[], capability: FirstPartyAppManifest['capabilities'][number], appId: string) {
   requireMainFrame(event)
   const grant = firstPartyGrantStore.resolve(boundedString(grantId, '授权句柄', 128), event.sender.id)
   const manifest = grant && firstPartyManifests.find(item => item.enabled && item.appId === grant.appId)
   if (!grant || !manifest || manifest.appId !== appId) throw new Error('第一方授权无效或应用已停用')
   validateFirstPartyAppManifest(manifest)
   if (!manifest.capabilities.includes(capability) || !grant.capabilities.has(capability)) {
-    throw new Error(capability === 'models:text.generate' ? '应用没有模型生成能力' : '应用没有所需能力')
+    throw new Error('应用没有所需能力')
   }
   return { grant, manifest }
 }
 
-export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, workspaceMedia, workspaceHtml, legacyNovelApiToken, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore(), fetchImpl = fetch }: PlatformIpcDependencies) {
+export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, workspaceMedia, workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore() }: PlatformIpcDependencies) {
   const userAgents = (call: ReturnType<typeof parseFirstPartyHarnessCall>) => {
     if (!['agents.list', 'agents.read', 'agents.save', 'agents.delete', 'agents.setEnabled'].includes(call.method)) throw new Error('智能体请求无效')
     let directory: string | undefined
@@ -189,7 +185,6 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
     return localMicroAppServer.validateDirectory(result.filePaths[0])
   })
   ipcMain.handle('platform:resolve-local-microapp-url', (_event, appId: string) => localMicroAppServer.getEntryUrl(appId))
-  ipcMain.handle('platform:get-novel-api-base-url', () => localMicroAppServer.getApiBaseUrl('novel'))
   ipcMain.handle('platform:create-first-party-grant', (event, appId: string) => {
     requireMainFrame(event)
     appId = boundedString(appId, '应用 ID', 128)
@@ -230,35 +225,6 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
       workspaceHtml?.closeForGrant(grantId, event.sender.id)
     }
     terminalSessions?.closeForWebContents(event.sender.id)
-  })
-  ipcMain.handle('platform:generate-first-party-text', async (event, grantId: string, role: 'authoring' | 'automation', prompt: string, selection: ModelSelection) => {
-    const { grant, manifest } = resolveFirstPartyGrant(event, grantId, firstPartyGrantStore, firstPartyManifests, 'models:text.generate')
-    if (role !== 'authoring' && role !== 'automation') throw new Error('模型职责无效')
-    boundedString(prompt, '模型请求内容', 100_000)
-    if (!selection || typeof selection !== 'object' || Array.isArray(selection)) throw new Error('模型选择无效')
-    const providerId = boundedString(selection.providerId, '供应商 ID', 128)
-    const modelId = boundedString(selection.modelId, '模型 ID', 128)
-    if (!legacyNovelApiToken) throw new Error('第一方模型通道尚未配置')
-    const baseUrl = localMicroAppServer.getApiBaseUrl('novel').replace(/\/?$/, '/')
-    const response = await fetchImpl(`${baseUrl}${role}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${legacyNovelApiToken}` },
-      body: JSON.stringify({ prompt, selection: { providerId, modelId } }),
-    })
-    if (!response.ok) throw new Error(`模型请求失败：${response.status}`)
-    return response.text()
-  })
-  ipcMain.handle('platform:first-party-list-novel-projects', (event, grantId: string) => {
-    resolveFirstPartyGrant(event, grantId, firstPartyGrantStore, firstPartyManifests, 'storage:novel-projects')
-    return database.novels.listProjects()
-  })
-  ipcMain.handle('platform:first-party-get-novel-project', (event, grantId: string, id: string) => {
-    resolveFirstPartyGrant(event, grantId, firstPartyGrantStore, firstPartyManifests, 'storage:novel-projects')
-    return database.novels.getProject(boundedString(id, '作品 ID', 256))
-  })
-  ipcMain.handle('platform:first-party-save-novel-project', (event, grantId: string, project: NovelProjectDocument) => {
-    resolveFirstPartyGrant(event, grantId, firstPartyGrantStore, firstPartyManifests, 'storage:novel-projects')
-    return database.novels.saveProject(project)
   })
   ipcMain.handle('platform:first-party-harness', (event, grantId: string, method: string, params: unknown) => {
     resolveFirstPartyGrant(event, grantId, firstPartyGrantStore, firstPartyManifests, 'harness:workbench', 'mira-harness')

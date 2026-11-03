@@ -25,7 +25,6 @@ vi.mock('../electron/services/harnessTerminalSessions', () => ({ HarnessTerminal
 vi.mock('../electron/services/harnessWorkspaceWatch', () => ({ HarnessWorkspaceWatch: class { closeAll() {} } }))
 vi.mock('../electron/ipc/platformIpc', () => ({ registerPlatformIpcHandlers: vi.fn() }))
 vi.mock('../electron/ipc/windowIpc', () => ({ registerWindowIpcHandlers: vi.fn() }))
-vi.mock('../electron/ipc/novelIpc', () => ({ registerNovelIpcHandlers: vi.fn() }))
 vi.mock('../electron/ipc/automationIpc', () => ({ registerAutomationIpcHandlers: vi.fn() }))
 vi.mock('../electron/ipc/mcpIpc', () => ({ registerMcpIpcHandlers: vi.fn() }))
 vi.mock('../electron/ipc/modelIpc', () => ({ registerModelIpcHandlers: vi.fn() }))

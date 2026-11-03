@@ -61,7 +61,7 @@ export interface LocalMicroAppServerOptions {
   mediaHandler?: LocalMicroAppApiHandler
   /** 内置资源包名 -> 绝对目录（随安装包分发，dev/打包路径不同）。 */
   builtinRoots?: Record<string, string>
-  /** 按微应用 id 注册的 POST API 处理器（如内置小说代理）。 */
+  /** 按微应用 id 注册的 POST API 处理器。 */
   apiHandlers?: ReadonlyMap<string, LocalMicroAppApiRoute>
 }
 

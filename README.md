@@ -210,7 +210,7 @@ sequenceDiagram
 ```text
 apps/harness-react/    React 工作台、局域网客户端与宿主桥
 electron/              主进程、preload、IPC、执行服务与存储
-src/                   Vue Shell、设置、小说页面与共享契约
+src/                   Vue Shell、设置与共享契约
 packages/              工作流编译器（mira-flow-kit）与运行时（mira-flow-runtime）
 resources/             随应用分发的插件与运行资源
 scripts/               构建及安装准备脚本

@@ -30,7 +30,7 @@ Mira 正在准备首个发行安装包。本次直接删除开发阶段废弃实
 
 - `PilotController` 和 `.pilot-*` 仍是当前生产代码命名，保留其实现与有效测试。
 - `mobile.html` 和 LAN 客户端由现行远程服务实际提供；本次不删除正在使用的功能，也不增加移动端验收范围。
-- `legacyNovelApi*` 仍承载内置小说页面的实际模型调用；`MiraLegacyWordReader` 中的 legacy 指 `.doc` 文件格式。这些名称不代表已废弃功能。
+- 2026-11-03 后续清理已移除内置小说页面、小说存储访问与 `legacyNovelApi*` 模型通道；已有用户数据库中的作品数据保留。`MiraLegacyWordReader` 中的 legacy 指 `.doc` 文件格式，与小说模块无关。
 - 当前媒体附件冻结、草稿回收与恢复、会话历史、资源管理、协议校验和外部插件协议支持仍有真实调用，保留。
 - Windows 插件 `docs/wiki` 是 MCP 资源，Swift/PowerShell/C# 是原生能力源码；应用图标通过打包配置和运行时引用，均保留。
 - 生产模块导入链复查中，剩余无普通导入的源码仅为类型声明文件；已核对打包资源、Worker、CSS 与动态资源引用。

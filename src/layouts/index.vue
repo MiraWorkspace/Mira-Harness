@@ -86,9 +86,8 @@ onMounted(() => {
 onUnmounted(() => removeZoomListener?.())
 const showAppNavigation = computed(() => route.path === '/workspace/harness-react' && Boolean(appNavigation.state))
 const appMenuVisible = ref(false)
-const currentAppCode = computed(() => route.path === '/novel' ? 'novel' : getAppCodeFromPath(route.path))
+const currentAppCode = computed(() => getAppCodeFromPath(route.path))
 const currentAppName = computed(() => {
-  if (currentAppCode.value === 'novel') return '小说创作'
   if (currentAppCode.value === 'main') return 'Mira Harness'
   return findRuntimeMicroApp(currentAppCode.value)?.name || '应用'
 })

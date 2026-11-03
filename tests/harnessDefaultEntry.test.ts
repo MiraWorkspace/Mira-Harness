@@ -32,6 +32,13 @@ beforeEach(() => restoreRoutes())
 afterAll(() => vi.unstubAllGlobals())
 
 describe('official React Harness entry', () => {
+  it('does not register the retired novel component even when a stale snapshot contains it', async () => {
+    restoreRoutes([{ id: 'ai-novel', title: 'AI 小说创作', type: 'menu', path: '/novel', target: { type: 'component', componentKey: 'aiNovel' } }])
+    expect(router.hasRoute('Menu_ai-novel')).toBe(false)
+    await router.push('/novel')
+    expect(router.currentRoute.value.name).toBe('NotFound')
+  })
+
   it.each(['/'])('opens the packaged React workbench directly from %s', async path => {
     await router.push(path)
     expect(router.currentRoute.value.path).toBe(HARNESS_WORKBENCH_PATH)
@@ -47,7 +54,7 @@ describe('official React Harness entry', () => {
   })
 
   it.each([
-    '/workspace', '/workspace/chat', '/workspace/chat/old-session', '/workspace/projects',
+    '/novel', '/workspace', '/workspace/chat', '/workspace/chat/old-session', '/workspace/projects',
     '/workspace/history', '/workspace/automations', '/workspace/usage',
     '/workspace/harness-pilot', '/workspace/harness-prototype',
     '/settings/python-environment', '/settings/git', '/settings/permissions',

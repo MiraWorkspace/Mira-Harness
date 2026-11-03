@@ -6,14 +6,14 @@ import type { PlatformApi, PlatformContext } from '../src/types'
 import { parseFirstPartyHarnessCall } from '../src/platform/firstPartyHarness'
 
 const manifest: FirstPartyAppManifest = {
-  appId: 'mira-novel-studio',
+  appId: 'sample-app',
 
   enabled: true,
-  trustedSource: { type: 'builtin', packagePath: 'novel-studio' },
+  trustedSource: { type: 'builtin', packagePath: 'sample-app' },
   entry: { path: 'index.html' },
   shellCompatibility: { minVersion: '0.0.10' },
   apiCompatibility: { major: 1 },
-  capabilities: ['models:text.generate', 'storage:novel-projects'],
+  capabilities: [],
 }
 const context: PlatformContext = { version: 1, theme: 'light', language: 'zh-CN', user: { id: 'platform', name: 'Mira' } }
 const harnessModelCalls = [
@@ -50,23 +50,23 @@ const workspaceFileFailures = [
 function bridge(overrides: Partial<FirstPartyAppManifest> = {}) {
   const api = {
     openResourceManager: vi.fn(async () => undefined),
-    generateFirstPartyText: vi.fn(async () => 'generated'),
-    listNovelProjects: vi.fn(async () => []),
-    saveNovelProject: vi.fn(async project => project),
-    listFirstPartyNovelProjects: vi.fn(async () => []),
-    getFirstPartyNovelProject: vi.fn(async () => ({ id: 'project-1' })),
-    saveFirstPartyNovelProject: vi.fn(async (_grantId, project) => project),
     invokeFirstPartyHarness: vi.fn(async (_grantId, method) => ({ method })),
-    getSnapshot: vi.fn(async () => ({ mainMenus: [], microApps: [], preferences: { 'first-party.mira-novel-studio.draft': { text: 'hi' } } })),
+    getSnapshot: vi.fn(async () => ({ mainMenus: [], microApps: [], preferences: { 'first-party.sample-app.draft': { text: 'hi' } } })),
     savePreference: vi.fn(async (_key: string, _value: unknown) => undefined),
   } as unknown as PlatformApi
   const navigate = vi.fn()
-  const options = { manifest: { ...manifest, ...overrides }, grantId: 'grant-for-novel', api, context, route: '/chapter/1', navigate }
+  const options = { manifest: { ...manifest, ...overrides }, grantId: 'grant-for-app', api, context, route: '/chapter/1', navigate }
   const request = (method: string, params?: unknown) => handleFirstPartyRequest(options, { type: 'mira:request', id: 'request-1', method, params })
   return { api, navigate, request }
 }
 
 describe('first-party capability bridge', () => {
+  it.each(['novel.list', 'novel.get', 'novel.save', 'models.generateText'])('rejects the retired API %s', async method => {
+    const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
+    await expect(entry.request(method)).rejects.toMatchObject({ code: 'UNKNOWN_METHOD' })
+    expect(entry.api.invokeFirstPartyHarness).not.toHaveBeenCalled()
+  })
+
   it('validates React project drafts and forwards data without a shell editor event', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     const input = { name: 'Project', roots: ['/a', '/b'], primaryRoot: '/b' }
@@ -86,9 +86,9 @@ describe('first-party capability bridge', () => {
     expect(getPathForFile).toHaveBeenCalledExactlyOnceWith(file)
     expect(entry.api.invokeFirstPartyHarness).not.toHaveBeenCalled()
     await entry.request('harness.attachments.select', { sessionId: 's', files: [file], paths: ['/forged'] })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'attachments.select', { sessionId: 's', paths: ['/native/资料'] })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'attachments.select', { sessionId: 's', paths: ['/native/资料'] })
     await entry.request('harness.attachments.select', { sessionId: 's', paths: ['/forged'] })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'attachments.select', { sessionId: 's' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'attachments.select', { sessionId: 's' })
     for (const files of [[{ name: '资料', path: '/forged' }], ['/forged'], Array(13).fill(file)]) await expect(entry.request('harness.attachments.paths', { files })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     const denied = bridge()
     await expect(denied.request('harness.attachments.paths', { files: [file] })).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
@@ -245,10 +245,10 @@ describe('first-party capability bridge', () => {
   it('preserves explicit browser resource and hidden creation through the double parse, while rejecting malformed identities', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] }), bounds = { x: 0, y: 0, width: 400, height: 300 }
     await entry.request('harness.browser.navigate', { sessionId: 'a', browserId: 'browser:first', url: 'https://mira.test/', bounds, visible: false })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'browser.navigate', { sessionId: 'a', browserId: 'browser:first', url: 'https://mira.test/', bounds, visible: false })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'browser.navigate', { sessionId: 'a', browserId: 'browser:first', url: 'https://mira.test/', bounds, visible: false })
     for (const method of ['browser.bounds', 'browser.control']) {
       await entry.request(`harness.${method}`, { sessionId: 'a', browserId: 'browser:second', bounds, action: 'hide' })
-      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', method, expect.objectContaining({ sessionId: 'a', browserId: 'browser:second' }))
+      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', method, expect.objectContaining({ sessionId: 'a', browserId: 'browser:second' }))
     }
     for (const browserId of ['', 'terminal:one', 'browser:../other', 'browser:' + 'x'.repeat(129), 12, null]) await expect(entry.request('harness.browser.control', { sessionId: 'a', browserId, action: 'close' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(entry.request('harness.browser.navigate', { sessionId: 'a', browserId: 'browser:one', url: 'https://mira.test/', bounds, visible: 'false' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
@@ -257,21 +257,11 @@ describe('first-party capability bridge', () => {
     expect(isFirstPartyRequest({ type: 'mira:request', id: '1', method: 'context.get' })).toBe(true)
     expect(isFirstPartyRequest({ type: 'mira:request', id: '1', method: '' })).toBe(false)
     expect(isFirstPartyRequest({ type: 'mira:request', id: '1', method: 'x'.repeat(129) })).toBe(false)
-    await expect(bridge().request('context.get')).resolves.toMatchObject({ appId: 'mira-novel-studio', apiVersion: { major: 1, minor: 0 }, route: '/chapter/1' })
+    await expect(bridge().request('context.get')).resolves.toMatchObject({ appId: 'sample-app', apiVersion: { major: 1, minor: 0 }, route: '/chapter/1' })
     await expect(bridge().request('getModelProviderApiKey')).rejects.toMatchObject({ code: 'UNKNOWN_METHOD' })
   })
 
-  it('rejects missing capabilities and access to another app\'s projects', async () => {
-    const missing = bridge({ capabilities: [] })
-    await expect(missing.request('models.generateText', { role: 'authoring', prompt: 'text', selection: { providerId: 'p', modelId: 'm' } })).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
-    expect(missing.api.generateFirstPartyText).not.toHaveBeenCalled()
-
-    const other = bridge({ appId: 'other-app' })
-    await expect(other.request('novel.list')).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
-    expect(other.api.listFirstPartyNovelProjects).not.toHaveBeenCalled()
-  })
-
-  it('confines navigation to app paths and rejects malformed projects', async () => {
+  it('confines navigation to app paths', async () => {
     const entry = bridge()
     for (const path of ['//example.com', '/../../settings', '/%2e%2e/settings', '/%2fsettings', '/a\\b']) {
       await expect(entry.request('navigation.open', { path })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
@@ -279,9 +269,6 @@ describe('first-party capability bridge', () => {
     expect(entry.navigate).not.toHaveBeenCalled()
     await expect(entry.request('navigation.open', { path: '/chapters/1' })).resolves.toBeNull()
     expect(entry.navigate).toHaveBeenCalledWith('/chapters/1')
-
-    await expect(entry.request('novel.save', { project: { version: 1, title: 'Untitled' } })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-    expect(entry.api.saveFirstPartyNovelProject).not.toHaveBeenCalled()
   })
 
   it('allows encoded query paths while retaining pathname confinement', async () => {
@@ -311,22 +298,6 @@ describe('first-party capability bridge', () => {
     await expect(entry.request('navigation.open', { path: '/settings/general' })).rejects.toMatchObject({ code: 'NAVIGATION_FAILED', message: '页面切换失败，请稍后重试' })
   })
 
-  it('sends only validated model selection fields to the host model channel', async () => {
-    const entry = bridge()
-    await expect(entry.request('models.generateText', { role: 'authoring', prompt: 'text', selection: { providerId: 'p', modelId: 'm', apiKey: 'injected' } })).resolves.toBe('generated')
-    expect(entry.api.generateFirstPartyText).toHaveBeenCalledWith('grant-for-novel', 'authoring', 'text', { providerId: 'p', modelId: 'm' })
-    await expect(entry.request('models.generateText', { role: 'authoring', prompt: 'text', selection: { providerId: 'p' } })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
-  })
-
-  it('routes novel storage through the grant-bound host API', async () => {
-    const entry = bridge()
-    await expect(entry.request('novel.list')).resolves.toEqual([])
-    await expect(entry.request('novel.get', { id: 'project-1' })).resolves.toEqual({ id: 'project-1' })
-    await expect(entry.request('novel.save', { project: { version: 1, id: 'project-1', title: 'Untitled' } })).resolves.toMatchObject({ id: 'project-1' })
-    expect(entry.api.listFirstPartyNovelProjects).toHaveBeenCalledWith('grant-for-novel')
-    expect(entry.api.getFirstPartyNovelProject).toHaveBeenCalledWith('grant-for-novel', 'project-1')
-    expect(entry.api.saveFirstPartyNovelProject).toHaveBeenCalledWith('grant-for-novel', expect.objectContaining({ id: 'project-1' }))
-  })
 
   it('shares only Harness keep-awake with desktop settings', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
@@ -336,7 +307,7 @@ describe('first-party capability bridge', () => {
     expect(entry.api.savePreference).toHaveBeenCalledWith('keepComputerAwake', false)
     const other = bridge()
     await other.request('preferences.set', { key: 'keepComputerAwake', value: true })
-    expect(other.api.savePreference).toHaveBeenCalledWith('first-party.mira-novel-studio.keepComputerAwake', true)
+    expect(other.api.savePreference).toHaveBeenCalledWith('first-party.sample-app.keepComputerAwake', true)
   })
 
   it('namespaces app preferences away from shell preference keys', async () => {
@@ -344,7 +315,7 @@ describe('first-party capability bridge', () => {
     await expect(entry.request('preferences.get', { key: 'draft' })).resolves.toEqual({ text: 'hi' })
     await expect(entry.request('preferences.get', { key: 'missing' })).resolves.toBeNull()
     await expect(entry.request('preferences.set', { key: 'draft', value: { text: 'next' } })).resolves.toBeNull()
-    expect(entry.api.savePreference).toHaveBeenCalledWith('first-party.mira-novel-studio.draft', { text: 'next' })
+    expect(entry.api.savePreference).toHaveBeenCalledWith('first-party.sample-app.draft', { text: 'next' })
     await expect(entry.request('preferences.set', { key: '../escape', value: 1 })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     expect(entry.api.savePreference).toHaveBeenCalledTimes(1)
     await expect(entry.request('preferences.set', { key: 'big', value: 'x'.repeat(262_145) })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
@@ -405,10 +376,10 @@ describe('first-party capability bridge', () => {
   it('validates confirmed recovery tokens and strips all renderer file operations', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await entry.request('harness.files.rewind-apply', { sessionId: 's', messageId: 'm', snapshotToken: 'a'.repeat(64), files: ['/private/file'], before: 'forged' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.rewind-apply', { sessionId: 's', messageId: 'm', snapshotToken: 'a'.repeat(64) })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.rewind-apply', { sessionId: 's', messageId: 'm', snapshotToken: 'a'.repeat(64) })
     for (const snapshotToken of ['', null, 4, 'a'.repeat(63), 'a'.repeat(65), 'g'.repeat(64)]) await expect(entry.request('harness.files.rewind-apply', { sessionId: 's', messageId: 'm', snapshotToken })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await entry.request('harness.files.rewind-recover', { sessionId: 's', recoveryId: 'recovery', files: [], directory: '/forged' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.rewind-recover', { sessionId: 's', recoveryId: 'recovery' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.rewind-recover', { sessionId: 's', recoveryId: 'recovery' })
     await expect(entry.request('harness.files.rewind-recover', { sessionId: 's', recoveryId: '' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   })
 
@@ -416,7 +387,7 @@ describe('first-party capability bridge', () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     for (const method of ['session.trace', 'session.trace.open', 'session.paths']) {
       await entry.request(`harness.${method}`, { id: 'task', path: '/private/forged', directory: '/private/forged' })
-      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', method, { id: 'task' })
+      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', method, { id: 'task' })
       for (const id of ['', null, 42, 'x'.repeat(129)]) await expect(entry.request(`harness.${method}`, { id })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     }
   })
@@ -424,22 +395,22 @@ describe('first-party capability bridge', () => {
   it('validates rewind identity and strips renderer-supplied snapshots and paths', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.files.rewind-preview', { sessionId: 's', messageId: 'm', path: '/private/forged', before: 'forged', records: [] })).resolves.toEqual({ method: 'files.rewind-preview' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.rewind-preview', { sessionId: 's', messageId: 'm' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.rewind-preview', { sessionId: 's', messageId: 'm' })
     for (const field of ['sessionId', 'messageId']) for (const value of ['', null, 4, 'x'.repeat(513)]) {
       await expect(entry.request('harness.files.rewind-preview', { sessionId: 's', messageId: 'm', [field]: value })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     }
-    const denied = bridge({ appId: 'mira-novel-studio', capabilities: [] })
+    const denied = bridge({ appId: 'sample-app', capabilities: [] })
     await expect(denied.request('harness.files.rewind-preview', { sessionId: 's', messageId: 'm' })).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
   })
 
   it('routes only the validated Harness surface through the owning grant', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.sessions.list')).resolves.toEqual({ method: 'sessions.list' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenCalledWith('grant-for-novel', 'sessions.list', {})
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenCalledWith('grant-for-app', 'sessions.list', {})
     await expect(entry.request('harness.message.run', { sessionId: 's', text: 'run', planning: false, selection: { providerId: 'p', modelId: 'm' }, extra: 'ignored' })).resolves.toEqual({ method: 'message.run' })
     await expect(entry.request('harness.message.run', { sessionId: 's', text: 'run', planning: false, selection: { providerId: 'p' } })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(entry.request('harness.files.list', { sessionId: 's', path: 'src' })).resolves.toEqual({ method: 'files.list' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.list', { sessionId: 's', path: 'src' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.list', { sessionId: 's', path: 'src' })
     await expect(entry.request('harness.files.read', { sessionId: 's', path: '../secret' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     const bounds = { x: 10, y: 20, width: 400, height: 300 }
     await expect(entry.request('harness.browser.navigate', { sessionId: 's', url: 'https://example.com', bounds })).resolves.toEqual({ method: 'browser.navigate' })
@@ -450,7 +421,7 @@ describe('first-party capability bridge', () => {
     await expect(entry.request('harness.browser.control', { sessionId: 's', action: 'show' })).resolves.toEqual({ method: 'browser.control' })
     await expect(entry.request('harness.browser.control', { sessionId: 's', browserId: 'browser:one', action: 'devtools' })).resolves.toEqual({ method: 'browser.control' })
     await expect(entry.request('harness.browser.external', { sessionId: 's', browserId: 'browser:one', url: 'https://example.com/redirect' })).resolves.toEqual({ method: 'browser.external' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'browser.external', { sessionId: 's', browserId: 'browser:one', url: 'https://example.com/redirect' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'browser.external', { sessionId: 's', browserId: 'browser:one', url: 'https://example.com/redirect' })
     for (const url of ['file:///tmp/secret', 'javascript:alert(1)', 'https://user:secret@example.com']) await expect(entry.request('harness.browser.external', { sessionId: 's', url })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(entry.request('harness.browser.control', { sessionId: 's', action: 'openDevTools' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     await expect(entry.request('harness.terminal.resize', { sessionId: 's', terminalId: 't', columns: 100, rows: 30 })).resolves.toEqual({ method: 'terminal.resize' })
@@ -460,10 +431,10 @@ describe('first-party capability bridge', () => {
   it('validates session-scoped Git status and exact ignored paths without forwarding filesystem or command controls', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.files.git-status', { sessionId: 's', root: '/private/injected', command: 'reset' })).resolves.toEqual({ method: 'files.git-status' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.git-status', { sessionId: 's' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.git-status', { sessionId: 's' })
     const paths = ['src/中文 file.ts', 'src/line\nbreak.ts', '-file', ':literal*', 'src/中文 file.ts']
     await expect(entry.request('harness.files.git-ignored', { sessionId: 's', paths, root: '/private/injected' })).resolves.toEqual({ method: 'files.git-ignored' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.git-ignored', { sessionId: 's', paths: paths.slice(0, -1) })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.git-ignored', { sessionId: 's', paths: paths.slice(0, -1) })
     vi.mocked(entry.api.invokeFirstPartyHarness).mockClear()
     for (const paths of [undefined, null, {}, Array(513).fill('src/a'), [''], ['../secret'], ['/secret'], ['C:\\secret'], ['file:/secret'], ['bad\0path'], ['a'.repeat(2049)]]) {
       await expect(entry.request('harness.files.git-ignored', { sessionId: 's', paths })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
@@ -497,9 +468,9 @@ describe('first-party capability bridge', () => {
   it('validates bounded workspace search requests and forwards only session-scoped search fields', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.files.search', { sessionId: 's', query: 'src/hwb', root: '/private/injected', refresh: true })).resolves.toEqual({ method: 'files.search' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.search', { sessionId: 's', query: 'src/hwb', refresh: true })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.search', { sessionId: 's', query: 'src/hwb', refresh: true })
     await expect(entry.request('harness.files.search', { sessionId: 's', query: '' })).resolves.toEqual({ method: 'files.search' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'files.search', { sessionId: 's', query: '', refresh: false })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'files.search', { sessionId: 's', query: '', refresh: false })
     await expect(entry.request('harness.files.search', { sessionId: 's', query: 'x'.repeat(256) })).resolves.toEqual({ method: 'files.search' })
     vi.mocked(entry.api.invokeFirstPartyHarness).mockClear()
     for (const query of [undefined, null, 42, ['src'], 'x'.repeat(257), 'src\0index', 'src\nindex', 'src\tindex']) {
@@ -524,7 +495,7 @@ describe('first-party capability bridge', () => {
   it('forwards only validated prepared creation fields through the owner grant', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.session.create', { prepared: true, projectId: 'project', draft: { groupId: 'group' } })).resolves.toEqual({ method: 'session.create' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'session.create', { prepared: true, projectId: 'project' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'session.create', { prepared: true, projectId: 'project' })
     vi.mocked(entry.api.invokeFirstPartyHarness).mockClear()
     for (const prepared of ['true', null, 1]) await expect(entry.request('harness.session.create', { prepared })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
     expect(entry.api.invokeFirstPartyHarness).not.toHaveBeenCalled()
@@ -533,7 +504,7 @@ describe('first-party capability bridge', () => {
   it('validates side creation using parent identity and drops renderer-authored history', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await expect(entry.request('harness.session.create-side', { parentId: 'parent', messages: ['fake'], permissionMode: 'full' })).resolves.toEqual({ method: 'session.create-side' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'session.create-side', { parentId: 'parent' })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'session.create-side', { parentId: 'parent' })
     for (const parentId of ['', null, 123]) await expect(entry.request('harness.session.create-side', { parentId })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   })
 
@@ -542,7 +513,7 @@ describe('first-party capability bridge', () => {
     for (const thinkingLevel of ['off', 'low', 'medium', 'high', undefined]) {
       const selection = { providerId: 'p', modelId: 'm', ...(thinkingLevel === undefined ? {} : { thinkingLevel }) }
       await expect(entry.request(`harness.${method}`, { ...params, selection: { ...selection, apiKey: 'injected', endpoint: 'https://injected.invalid' } })).resolves.toEqual({ method })
-      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', method, expect.objectContaining({ selection }))
+      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', method, expect.objectContaining({ selection }))
     }
   })
 
@@ -562,7 +533,7 @@ describe('first-party capability bridge', () => {
     for (const path of [...selectedFilePaths, 'docs/a.md', 'docs\\a.md']) {
       const references = [{ path, name: 'notes.md', content: 'injected', extra: 'ignored' }]
       await expect(entry.request(`harness.${method}`, { ...params, references, selection: { providerId: 'p', modelId: 'm' } })).resolves.toEqual({ method })
-      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', method, expect.objectContaining({ references: [{ path, name: 'notes.md' }] }))
+      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', method, expect.objectContaining({ references: [{ path, name: 'notes.md' }] }))
     }
   })
 
@@ -667,7 +638,7 @@ describe('first-party capability bridge', () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     for (const data of ['\0', '\r', '\n', '\t', ' ', '\u0003', '\u001b[A']) {
       await expect(entry.request('harness.terminal.write', { sessionId: 's', terminalId: 't', data })).resolves.toEqual({ method: 'terminal.write' })
-      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'terminal.write', { sessionId: 's', terminalId: 't', data })
+      expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'terminal.write', { sessionId: 's', terminalId: 't', data })
     }
     vi.mocked(entry.api.invokeFirstPartyHarness).mockClear()
     for (const params of [{ sessionId: 's\0', terminalId: 't', data: '\0' }, { sessionId: 's', terminalId: 't\0', data: '\0' }, { sessionId: 's', terminalId: 't', data: '' }, { sessionId: 's', terminalId: 't', data: 'x'.repeat(100_001) }]) {
@@ -680,7 +651,7 @@ describe('first-party capability bridge', () => {
   it('validates context paste identity and mode without accepting renderer clipboard contents', async () => {
     const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
     await entry.request('harness.terminal.paste', { sessionId: 's', terminalId: 't', bracketed: true, data: 'must not cross bridge' })
-    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-novel', 'terminal.paste', { sessionId: 's', terminalId: 't', bracketed: true })
+    expect(entry.api.invokeFirstPartyHarness).toHaveBeenLastCalledWith('grant-for-app', 'terminal.paste', { sessionId: 's', terminalId: 't', bracketed: true })
     vi.mocked(entry.api.invokeFirstPartyHarness).mockClear()
     for (const params of [{ sessionId: 's', terminalId: 't', bracketed: 'true' }, { sessionId: 's', terminalId: 't' }, { sessionId: 's\0', terminalId: 't', bracketed: true }]) {
       await expect(entry.request('harness.terminal.paste', params)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
@@ -699,7 +670,6 @@ it('allows only the Harness capability to open the resource window, without navi
   expect(denied.api.openResourceManager).not.toHaveBeenCalled()
 })
 
-
 it('restricts About to the Harness workbench and opens its native command without navigation', async () => {
   const entry = bridge({ appId: 'mira-harness', capabilities: ['harness:workbench'] })
   entry.api.windowCommand = vi.fn(async () => undefined)
@@ -708,7 +678,7 @@ it('restricts About to the Harness workbench and opens its native command withou
   expect(entry.navigate).not.toHaveBeenCalled()
   await expect(entry.request('about.show', {})).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   await expect(bridge().request('about.show')).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
-  await expect(bridge({ appId: 'mira-novel-studio', capabilities: ['harness:workbench'] }).request('about.show')).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
+  await expect(bridge({ appId: 'sample-app', capabilities: ['harness:workbench'] }).request('about.show')).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
 })
 
 describe('Harness sidebar appearance bridge', () => {
