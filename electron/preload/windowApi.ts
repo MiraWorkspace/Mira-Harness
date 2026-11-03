@@ -1,11 +1,20 @@
 import { ipcRenderer, webFrame, webUtils } from 'electron'
 
+let fullScreen = false
+ipcRenderer.on('window:fullscreen-changed', (_event, value: boolean) => { fullScreen = value })
+
 export const windowApi = {
   openResourceManager: () => ipcRenderer.invoke('window:resource-open'),
   windowChrome: process.platform === 'darwin' ? 'macos-overlay' : (process.platform === 'win32' ? 'windows-overlay' : 'standard'),
   setTitleBarChrome: (chrome: { color: string; symbolColor: string; height?: number }) => ipcRenderer.invoke('window:set-titlebar-chrome', chrome),
   windowCommand: (action: string) => ipcRenderer.invoke('window:command', action),
   getDesktopZoomFactor: () => webFrame.getZoomFactor(),
+  isFullScreen: () => fullScreen,
+  onFullScreenChanged: (listener: (fullScreen: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: boolean) => listener(value)
+    ipcRenderer.on('window:fullscreen-changed', handler)
+    return () => ipcRenderer.removeListener('window:fullscreen-changed', handler)
+  },
   onDesktopZoomChanged: (listener: (factor: number) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, factor: number) => listener(factor)
     ipcRenderer.on('window:zoom-changed', handler)

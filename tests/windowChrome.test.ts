@@ -43,6 +43,12 @@ describe('Windows title-bar chrome', () => {
     expect(layoutSource).toMatch(/mira-shell--windows-overlay[^{]*\{\s*padding-left:\s*16px/)
   })
 
+  it('removes traffic-light spacing only for fullscreen macOS windows', () => {
+    const layoutSource = readFileSync(new URL('../src/layouts/index.vue', import.meta.url), 'utf8')
+    expect(layoutSource).toMatch(/\.mira-shell--macos-overlay\.mira-shell--fullscreen \.mira-shell__bar\s*\{\s*padding-left:\s*16px;/)
+    expect(layoutSource).toMatch(/\.mira-shell--macos-overlay \.mira-shell__bar\s*\{\s*padding-left:\s*max\(92px/)
+  })
+
   it('keeps the native overlay transparent in light and dark themes', () => {
     expect(resolveWindowChrome('light')).toEqual({ color: '#00000000', symbolColor: '#18181b', height: 36 })
     expect(resolveWindowChrome('dark')).toEqual({ color: '#00000000', symbolColor: '#fafafa', height: 36 })

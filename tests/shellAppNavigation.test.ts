@@ -240,6 +240,25 @@ describe('Shell navigation controls', () => {
 })
 
 
+describe('Shell fullscreen titlebar spacing', () => {
+  it.each([false, true])('tracks fullscreen entry and exit from initial state %s and unsubscribes on unmount', async initial => {
+    let fullScreen = initial, changed!: (value: boolean) => void
+    const remove = vi.fn()
+    Object.assign(window.platform!, { isFullScreen: () => fullScreen, onFullScreenChanged: (listener: typeof changed) => { changed = listener; return remove } })
+    const renderer = mount(ActualLayout)
+    const shell = () => renderer.all().find(node => String(node.props.class).split(' ').includes('mira-shell'))!
+    const isFullScreen = () => String(shell().props.class).split(' ').includes('mira-shell--fullscreen')
+    expect(isFullScreen()).toBe(initial)
+    expect(String(shell().props.class)).toContain('mira-shell--macos-overlay')
+    for (const next of [!initial, initial]) {
+      fullScreen = next; changed(next); await nextTick()
+      expect(isFullScreen()).toBe(next)
+    }
+    mounts.pop()!.unmount()
+    expect(remove).toHaveBeenCalledOnce()
+  })
+})
+
 describe('Harness titlebar sidebar controls', () => {
   it('places the toggle before history and hides new task from focus while expanded', async () => {
     const { owner } = connect()

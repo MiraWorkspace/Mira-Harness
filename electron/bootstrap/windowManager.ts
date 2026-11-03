@@ -182,8 +182,11 @@ export function createMainWindow(options: WindowManagerOptions) {
     const factor = 1.1 ** miraZoomLevel(options.getDesktopZoomLevel?.())
     window.webContents.setZoomFactor(factor)
     alignMiraTrafficLights(window, factor)
+    window.webContents.send('window:fullscreen-changed', window.isFullScreen())
     window.webContents.send('window:zoom-changed', factor)
   })
+  window.on('enter-full-screen', () => window.webContents.send('window:fullscreen-changed', true))
+  window.on('leave-full-screen', () => window.webContents.send('window:fullscreen-changed', false))
   window.once('ready-to-show', () => {
     if (options.getStartupWindowBehavior?.() !== 'restore' || !saved || saved.maximized) window.maximize()
     if (saved?.fullScreen) window.setFullScreen(true)

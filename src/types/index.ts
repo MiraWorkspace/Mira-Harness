@@ -157,6 +157,8 @@ export interface PlatformApi {
   windowCommand(action: string): Promise<void>
   getDesktopZoomFactor?(): number
   onDesktopZoomChanged?(listener: (factor: number) => void): () => void
+  isFullScreen?(): boolean
+  onFullScreenChanged?(listener: (fullScreen: boolean) => void): () => void
   onWindowNavigate(listener: (path: string) => void): () => void
   onWindowCloseContext?(listener: () => void): () => void
   listModelProviders(): Promise<import('@/config/harness').ModelProviderSummary[]>

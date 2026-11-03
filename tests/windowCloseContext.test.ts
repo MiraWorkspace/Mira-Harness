@@ -6,7 +6,14 @@ import { windowApi } from '../electron/preload/windowApi'
 const about = vi.hoisted(() => vi.fn(async () => undefined))
 vi.mock('../electron/bootstrap/miraAbout', () => ({ showMiraAboutDialog: about }))
 
-const electron = vi.hoisted(() => ({ menu: [] as any[], focused: undefined as any, on: vi.fn(), off: vi.fn(), openExternal: vi.fn(async () => undefined) }))
+const electron = vi.hoisted(() => {
+  const listeners = new Map<string, Set<Function>>()
+  return { menu: [] as any[], focused: undefined as any, listeners,
+    on: vi.fn((channel: string, listener: Function) => { if (!listeners.has(channel)) listeners.set(channel, new Set()); listeners.get(channel)!.add(listener) }),
+    off: vi.fn((channel: string, listener: Function) => listeners.get(channel)?.delete(listener)),
+    openExternal: vi.fn(async () => undefined),
+  }
+})
 vi.mock('electron', () => ({
   app: { isPackaged: true }, BrowserWindow: class {
     static getFocusedWindow() { return electron.focused }
@@ -34,7 +41,7 @@ vi.mock('electron', () => ({
   ipcRenderer: { on: electron.on, removeListener: electron.off },
 }))
 afterEach(() => vi.restoreAllMocks())
-beforeEach(() => { electron.menu = []; electron.focused = undefined; vi.clearAllMocks() })
+beforeEach(() => { electron.menu = []; electron.focused = undefined; vi.clearAllMocks(); electron.listeners.get('window:fullscreen-changed')?.forEach(listener => listener({}, false)) })
 
 it('opens web and email links in the system handler without creating a window or accepting other protocols', () => {
   const window = createMainWindow({
@@ -104,6 +111,39 @@ it('reports the actual renderer zoom and removes its zoom-change listener', () =
   const [channel, callback] = electron.on.mock.lastCall!
   expect(channel).toBe('window:zoom-changed'); callback({}, 1.21); expect(listener).toHaveBeenCalledWith(1.21)
   remove(); expect(electron.off).toHaveBeenCalledExactlyOnceWith(channel, callback)
+})
+
+it('reports native fullscreen entry, exit and the current state after a renderer reload', () => {
+  const window = createMainWindow({ getCloseWindowBehavior: () => 'quit', isQuitting: () => false })
+  const emit = (event: string) => (window.on as any).mock.calls.find(([name]: any[]) => name === event)[1]()
+  emit('enter-full-screen')
+  expect(window.webContents.send).toHaveBeenLastCalledWith('window:fullscreen-changed', true)
+  emit('leave-full-screen')
+  expect(window.webContents.send).toHaveBeenLastCalledWith('window:fullscreen-changed', false)
+  const loaded = (window.webContents.on as any).mock.calls.find(([name]: any[]) => name === 'did-finish-load')[1]
+  for (const state of [true, false]) {
+    vi.mocked(window.isFullScreen).mockReturnValue(state)
+    window.webContents.send.mockClear()
+    loaded()
+    expect(window.webContents.send).toHaveBeenCalledWith('window:fullscreen-changed', state)
+  }
+})
+
+it('caches fullscreen before the Shell subscribes and removes only its change listener', () => {
+  const emit = (value: boolean) => electron.listeners.get('window:fullscreen-changed')?.forEach(listener => listener({}, value))
+  emit(true)
+  expect(windowApi.isFullScreen()).toBe(true)
+  const listener = vi.fn(), remove = windowApi.onFullScreenChanged(listener)
+  const [channel, callback] = electron.on.mock.lastCall!
+  expect(channel).toBe('window:fullscreen-changed')
+  emit(false)
+  expect(windowApi.isFullScreen()).toBe(false)
+  expect(listener).toHaveBeenCalledExactlyOnceWith(false)
+  remove()
+  expect(electron.off).toHaveBeenCalledExactlyOnceWith(channel, callback)
+  emit(true)
+  expect(windowApi.isFullScreen()).toBe(true)
+  expect(listener).toHaveBeenCalledOnce()
 })
 
 it('routes Cmd/Ctrl+W through the supplied window renderer, leaving close preferences to the Shell', () => {

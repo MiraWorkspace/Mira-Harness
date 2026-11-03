@@ -1,5 +1,5 @@
 <template>
-  <div class="mira-shell" :class="`mira-shell--${windowChrome}`" :style="{ '--mira-desktop-zoom': desktopZoomFactor }">
+  <div class="mira-shell" :class="[`mira-shell--${windowChrome}`, { 'mira-shell--fullscreen': isFullScreen }]" :style="{ '--mira-desktop-zoom': desktopZoomFactor }">
     <header class="mira-shell__bar">
       <div class="mira-shell__identity">
         <el-popover v-model:visible="appMenuVisible" trigger="click" placement="bottom-start" :width="220" :show-arrow="false" popper-class="mira-app-switcher-popper">
@@ -78,12 +78,16 @@ const commandPaletteStore = useCommandPaletteStore()
 const appNavigation = useAppNavigationStore()
 const windowChrome = window.platform?.windowChrome ?? 'standard'
 const desktopZoomFactor = ref(window.platform?.getDesktopZoomFactor?.() ?? 1)
+const isFullScreen = ref(window.platform?.isFullScreen?.() ?? false)
 let removeZoomListener: (() => void) | undefined
+let removeFullScreenListener: (() => void) | undefined
 onMounted(() => {
   removeZoomListener = window.platform?.onDesktopZoomChanged?.(factor => { if (Number.isFinite(factor) && factor > 0) desktopZoomFactor.value = factor })
+  removeFullScreenListener = window.platform?.onFullScreenChanged?.(value => { isFullScreen.value = value })
   desktopZoomFactor.value = window.platform?.getDesktopZoomFactor?.() ?? 1
+  isFullScreen.value = window.platform?.isFullScreen?.() ?? false
 })
-onUnmounted(() => removeZoomListener?.())
+onUnmounted(() => { removeZoomListener?.(); removeFullScreenListener?.() })
 const showAppNavigation = computed(() => route.path === '/workspace/harness-react' && Boolean(appNavigation.state))
 const appMenuVisible = ref(false)
 const currentAppCode = computed(() => getAppCodeFromPath(route.path))
@@ -129,6 +133,7 @@ function openSettings() {
 
 .mira-shell--standard .mira-shell__bar { padding-left: 16px; }
 .mira-shell--macos-overlay .mira-shell__bar { padding-left: max(92px, calc(92px / var(--mira-desktop-zoom, 1))); }
+.mira-shell--macos-overlay.mira-shell--fullscreen .mira-shell__bar { padding-left: 16px; }
 .mira-shell--windows-overlay .mira-shell__bar { padding-left: 16px; padding-right: 148px; }
 
 .mira-shell__identity,
