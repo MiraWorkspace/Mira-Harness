@@ -32,9 +32,12 @@ const electron = vi.hoisted(() => ({
   showItemInFolder: vi.fn(),
   guestFromId: vi.fn(),
   browserSession: { on: vi.fn() },
+  relaunch: vi.fn(),
+  quit: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
+  app: { relaunch: electron.relaunch, quit: electron.quit },
   ipcMain: { handle: electron.handle },
   webContents: { fromId: electron.guestFromId },
   session: { fromPartition: () => electron.browserSession },
@@ -384,6 +387,7 @@ describe('platform IPC registration', () => {
     const { invoke, database, localMicroAppServer, snapshot } = register()
     expect([...electron.handlers.keys()]).toEqual([
       'platform:get-snapshot',
+      'platform:apps',
       'platform:agent-models',
       'platform:user-agents',
       'platform:prompt-commands',
@@ -412,6 +416,30 @@ describe('platform IPC registration', () => {
     expect(database.importSnapshot).toHaveBeenCalledWith('{"mainMenus":[],"microApps":[],"preferences":{}}')
     expect(database.restoreDefaults).toHaveBeenCalledOnce()
     expect(localMicroAppServer.setApps).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps app discovery, enablement and catalog requests on the shell frame', () => {
+    const snapshot = { microApps: [{ code: 'mira-workbench-test', test: true }] }
+    const apps = { snapshot: vi.fn(() => snapshot), scan: vi.fn(() => ({ snapshot })), setEnabled: vi.fn(), refreshCatalog: vi.fn(), install: vi.fn(), uninstall: vi.fn(), debugDirectory: vi.fn(() => '/test/apps/mira-workbench-test') }
+    const { invoke, invokeFromSubframe } = register({ apps: apps as never })
+    expect(invoke('platform:get-snapshot')).toBe(snapshot)
+    expect(invoke('platform:apps', 'scan')).toEqual({ snapshot })
+    for (const action of ['scan', 'setEnabled', 'refreshCatalog', 'openDirectory', 'install', 'uninstall', 'restart']) expect(() => invokeFromSubframe('platform:apps', action)).toThrow('宿主主页面')
+    invoke('platform:apps', 'setEnabled', { id: 'mira-workbench-test', enabled: false })
+    expect(apps.setEnabled).toHaveBeenCalledWith('mira-workbench-test', false)
+    invoke('platform:apps', 'refreshCatalog')
+    expect(apps.refreshCatalog).toHaveBeenCalledWith(undefined)
+    invoke('platform:apps', 'install', { id: 'mira-workbench' })
+    expect(apps.install).toHaveBeenCalledWith('mira-workbench')
+    invoke('platform:apps', 'uninstall', { id: 'mira-workbench' })
+    expect(apps.uninstall).toHaveBeenCalledWith('mira-workbench')
+    invoke('platform:apps', 'openDirectory', { id: 'mira-workbench-test' })
+    expect(apps.debugDirectory).toHaveBeenCalledWith('mira-workbench-test')
+    expect(electron.openPath).toHaveBeenCalledWith('/test/apps/mira-workbench-test')
+    invoke('platform:apps', 'restart')
+    expect(electron.relaunch).toHaveBeenCalledOnce()
+    expect(electron.quit).toHaveBeenCalledOnce()
+    expect(() => invoke('platform:apps', 'unknown')).toThrow('未知的应用操作')
   })
 
   it('routes first-party session lists through the live runtime snapshot rather than persisted database status', () => {

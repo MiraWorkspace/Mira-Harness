@@ -104,8 +104,6 @@ body:has(.settings-page) {
 @keyframes settings-tooltip-enter { from { opacity: 0; scale: .95; translate: var(--settings-tooltip-x) var(--settings-tooltip-y); } to { opacity: 1; scale: 1; translate: 0 0; } }
 @keyframes settings-tooltip-exit { from { opacity: 1; scale: 1; translate: 0 0; } to { opacity: 0; scale: .95; translate: 0 0; } }
 
-@keyframes settings-surface-enter { from { opacity: 0; scale: .95; translate: 0 -4px; } to { opacity: 1; scale: 1; translate: 0 0; } }
-@keyframes settings-surface-exit { from { opacity: 1; scale: 1; } to { opacity: 0; scale: .95; } }
 
 /* Include teleported surfaces; retain the workbench's reduced-motion policy. */
 @media (prefers-reduced-motion: reduce) {

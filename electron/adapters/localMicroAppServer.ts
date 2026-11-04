@@ -140,9 +140,7 @@ export class LocalMicroAppServer {
       if (!app.enabled) continue
       try {
         if (app.entry.type === 'local-directory') {
-          // 目录型入口仍仅限 Wujie 模式使用，内置资源包不限集成模式。
-          if (app.integrationMode !== 'wujie') continue
-          nextRoots.set(app.id, this.validateDirectory(app.entry.directory))
+          nextRoots.set(app.id, this.validateDirectory(app.entry.directory, app.entryPath))
         } else if (app.entry.type === 'builtin') {
           const root = this.builtinRoots[app.entry.package]
           if (!root) throw new Error(`内置微应用资源包不存在: ${app.entry.package}`)
@@ -155,7 +153,7 @@ export class LocalMicroAppServer {
     return nextRoots
   }
 
-  validateDirectory(directory: string) {
+  validateDirectory(directory: string, entryPath = 'index.html') {
     if (!directory?.trim()) throw new Error('请选择本地构建目录')
     let root: string
     try {
@@ -164,8 +162,10 @@ export class LocalMicroAppServer {
     } catch {
       throw new Error('所选目录不存在或无法访问')
     }
-    const entry = resolve(root, 'index.html')
-    if (!existsSync(entry) || !statSync(entry).isFile()) throw new Error('所选目录必须直接包含 index.html')
+    const entry = resolve(root, entryPath)
+    if (!existsSync(entry) || !statSync(entry).isFile()) throw new Error('所选目录必须包含有效的包内入口文件')
+    const entryRelative = relative(root, realpathSync(entry))
+    if (isAbsolute(entryRelative) || entryRelative === '..' || entryRelative.startsWith('../') || entryRelative.startsWith('..\\')) throw new Error('所选目录必须包含有效的包内入口文件')
     return root
   }
 

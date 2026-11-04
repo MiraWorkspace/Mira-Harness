@@ -22,7 +22,7 @@ export const applications = computed<ApplicationOption[]>(() => [
   ...runtimeNavigation.microApps
     .filter(app => app.enabled && app.code !== 'mira-harness')
     .sort((a, b) => a.sort - b.sort)
-    .map(app => ({ code: app.code, name: app.name, icon: app.icon, type: 'microapp' as const })),
+    .map(app => ({ code: app.code, name: app.name, icon: app.icon, iconUrl: app.iconUrl, test: app.test, type: 'microapp' as const })),
 ])
 
 export function applyPlatformSnapshot(snapshot: PlatformSnapshot) {

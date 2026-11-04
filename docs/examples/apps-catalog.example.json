@@ -1,10 +1,37 @@
 {
   "example": true,
-  "notice": "仅用于展示目录结构。版本、下载地址、文件大小和 SHA-256 均未经过发布验证，不能直接用于正式安装。正式发布时移除 example、notice，并填写真实发布数据。",
+  "notice": "目录协议示例，不是可安装的正式目录。发布前移除 example 和 notice，填写真实 HTTPS 图标、发布包 URL、正整数 sizeBytes 和 SHA-256；规划应用可保留 releases: []。test 仅属于包内清单，不进入线上目录。",
   "schemaVersion": 1,
-  "revision": 1,
-  "publishedAt": "2026-10-21T12:00:00+08:00",
+  "revision": 2,
+  "publishedAt": "2026-11-04T00:00:00+08:00",
   "apps": [
+    {
+      "id": "mira-workbench",
+      "name": "Mira Workbench",
+      "description": "聚合常用 AI 网站与搜索工具，支持自定义网站和内部标签页。",
+      "repository": "https://github.com/tuyn53/Mira-Workbench",
+      "icon": "https://github.com/tuyn53/Mira-Workbench/releases/download/v0.1.0/mira-workbench-logo.png",
+      "releases": [
+        {
+          "version": "0.1.0",
+          "channel": "stable",
+          "publishedAt": "2026-11-04T00:00:00+08:00",
+          "releaseNotes": "示例首版：17 个网站、搜索、显示管理与内部标签页；不代表已经发布。",
+          "compatibility": {
+            "minShellVersion": "0.1.0-beta.1",
+            "platformApi": {
+              "major": 1,
+              "minor": 0
+            }
+          },
+          "package": {
+            "url": "https://github.com/tuyn53/Mira-Workbench/releases/download/v0.1.0/mira-workbench-0.1.0.zip",
+            "sizeBytes": null,
+            "sha256": "REPLACE_WITH_REAL_64_CHARACTER_SHA256"
+          }
+        }
+      ]
+    },
     {
       "id": "mira-novel-studio",
       "name": "Mira Novel Studio",
@@ -17,11 +44,11 @@
           "publishedAt": "2026-10-21T12:00:00+08:00",
           "releaseNotes": "示例更新：完善章节编排和 AI 辅助写作。需要新版宿主，旧版宿主可以选择下方兼容版本。",
           "compatibility": {
-            "minHostVersion": "0.0.11",
             "platformApi": {
               "major": 1,
-              "minMinor": 1
-            }
+              "minor": 1
+            },
+            "minShellVersion": "0.0.11"
           },
           "package": {
             "url": "https://github.com/ChatWw/Mira-Novel-Studio/releases/download/v0.2.0/mira-novel-studio-0.2.0.zip",
@@ -35,11 +62,11 @@
           "publishedAt": "2026-10-20T12:00:00+08:00",
           "releaseNotes": "示例首版：作品书架、章节编辑和基础 AI 写作。",
           "compatibility": {
-            "minHostVersion": "0.0.10",
             "platformApi": {
               "major": 1,
-              "minMinor": 0
-            }
+              "minor": 0
+            },
+            "minShellVersion": "0.0.10"
           },
           "package": {
             "url": "https://github.com/ChatWw/Mira-Novel-Studio/releases/download/v0.1.0/mira-novel-studio-0.1.0.zip",
@@ -61,11 +88,11 @@
           "publishedAt": "2026-10-21T12:00:00+08:00",
           "releaseNotes": "示例预览版：仅展示第二个应用的目录写法，不代表已发布或已接通。",
           "compatibility": {
-            "minHostVersion": "0.0.11",
             "platformApi": {
               "major": 1,
-              "minMinor": 1
-            }
+              "minor": 1
+            },
+            "minShellVersion": "0.0.11"
           },
           "package": {
             "url": "https://github.com/ChatWw/Mira-Vision/releases/download/v0.1.0/mira-vision-0.1.0.zip",

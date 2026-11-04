@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, dialog, ipcMain, shell, webContents, type OpenDialogOptions, type SaveDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, webContents, type OpenDialogOptions, type SaveDialogOptions } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type { MiraWorkspaceHtml } from '../services/miraWorkspaceHtml'
@@ -8,6 +8,7 @@ import { realpathSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { PlatformDatabase } from '../storage/database'
 import type { LocalMicroAppServer } from '../adapters/localMicroAppServer'
+import type { MiraApps } from '../services/miraApps'
 import type { McpConfigStore } from '../storage/mcpConfigStore'
 import type { MicroApp } from '../../src/types'
 import { invokeMiraFlowRequest, type MiraFlowRequestPort } from './miraFlowIpc'
@@ -42,6 +43,7 @@ export interface PlatformIpcDependencies {
   database: PlatformDatabase
   harnessRuntime?: HarnessRuntime
   localMicroAppServer: LocalMicroAppServer
+  apps?: MiraApps
   firstPartyManifests?: readonly FirstPartyAppManifest[]
   firstPartyGrantStore?: FirstPartyGrantStore
   terminalSessions?: HarnessTerminalSessions
@@ -73,7 +75,7 @@ function resolveFirstPartyGrant(event: { sender: { id: number }; senderFrame?: {
   return { grant, manifest }
 }
 
-export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, workspaceMedia, workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore() }: PlatformIpcDependencies) {
+export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, apps, workspaceMedia, workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore() }: PlatformIpcDependencies) {
   const userAgents = (call: ReturnType<typeof parseFirstPartyHarnessCall>) => {
     if (!['agents.list', 'agents.read', 'agents.save', 'agents.delete', 'agents.setEnabled'].includes(call.method)) throw new Error('智能体请求无效')
     let directory: string | undefined
@@ -107,7 +109,19 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
   const browserViewports = new MiraBrowserViewports()
   const browserProtection = new MiraBrowserProtection()
   const archivedSelections = new Map<string, { snapshotId: string; ids: readonly string[]; webContentsId: number }>()
-  ipcMain.handle('platform:get-snapshot', () => database.getSnapshot())
+  ipcMain.handle('platform:get-snapshot', () => apps?.snapshot() ?? database.getSnapshot())
+  ipcMain.handle('platform:apps', (event, action: string, input: { id?: string; enabled?: boolean; url?: string } = {}) => {
+    requireMainFrame(event)
+    if (!apps) throw new Error('应用服务不可用')
+    if (action === 'scan') return apps.scan()
+    if (action === 'setEnabled') return apps.setEnabled(boundedString(input.id, '应用 ID', 64), input.enabled!)
+    if (action === 'refreshCatalog') return apps.refreshCatalog(input.url === undefined ? undefined : boundedString(input.url, '目录地址', 2048))
+    if (action === 'install') return apps.install(boundedString(input.id, '应用 ID', 64))
+    if (action === 'uninstall') return apps.uninstall(boundedString(input.id, '应用 ID', 64))
+    if (action === 'openDirectory') return shell.openPath(apps.debugDirectory(boundedString(input.id, '应用 ID', 64))).then(error => { if (error) throw new Error(error) })
+    if (action === 'restart') { app.relaunch(); app.quit(); return }
+    throw new Error('未知的应用操作')
+  })
   ipcMain.handle('platform:agent-models', (event, method: string, params?: unknown) => {
     requireMainFrame(event)
     const call = parseFirstPartyHarnessCall(method, params)
@@ -168,9 +182,11 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
     return database.savePreference(key, value)
   })
   ipcMain.handle('platform:update-menus', (_event, menus) => database.saveMenus(menus))
-  ipcMain.handle('platform:update-microapps', (_event, apps: MicroApp[]) => {
-    localMicroAppServer.validateApps(apps)
-    const snapshot = database.saveMicroApps(apps)
+  ipcMain.handle('platform:update-microapps', (_event, records: MicroApp[]) => {
+    const persisted = records.filter(record => !record.localApp)
+    localMicroAppServer.validateApps(persisted)
+    const snapshot = database.saveMicroApps(persisted)
+    if (apps) return apps.scan().snapshot
     localMicroAppServer.setApps(snapshot.microApps)
     return snapshot
   })
@@ -767,12 +783,14 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
   ipcMain.handle('platform:import-snapshot', (_event, snapshot: string) => {
     const next = database.importSnapshot(snapshot)
     workspaceWatch?.closeInvalid()
+    if (apps) return apps.scan().snapshot
     localMicroAppServer.setApps(next.microApps)
     return next
   })
   ipcMain.handle('platform:restore-defaults', () => {
     const next = database.restoreDefaults()
     workspaceWatch?.closeInvalid()
+    if (apps) return apps.scan().snapshot
     localMicroAppServer.setApps(next.microApps)
     return next
   })

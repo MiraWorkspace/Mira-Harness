@@ -2,18 +2,22 @@
   <div class="mira-shell" :class="[`mira-shell--${windowChrome}`, { 'mira-shell--fullscreen': isFullScreen }]" :style="{ '--mira-desktop-zoom': desktopZoomFactor }">
     <header class="mira-shell__bar">
       <div class="mira-shell__identity">
-        <el-popover v-model:visible="appMenuVisible" trigger="click" placement="bottom-start" :width="220" :show-arrow="false" popper-class="mira-app-switcher-popper">
+        <el-popover v-model:visible="appMenuVisible" trigger="click" placement="bottom-start" :width="220" :show-arrow="false" transition="mira-app-menu" popper-class="mira-app-switcher-popper">
           <template #reference>
             <button type="button" class="mira-shell__app-switch" aria-label="选择应用" :aria-expanded="appMenuVisible">
-              <span>{{ currentAppName }}</span><AppIcon name="ArrowDown" />
+              <span>{{ currentAppName }}</span><DevBadge v-if="currentApp?.test" /><AppIcon name="ArrowDown" />
             </button>
           </template>
           <nav class="mira-app-switcher" aria-label="应用列表">
-            <button v-for="app in applications" :key="app.code" type="button" :class="{ 'is-current': currentAppCode === app.code }" @click="switchApp(app.code)">
+            <button v-for="app in applications" :key="app.code" type="button" :class="{ 'is-current': currentAppCode === app.code, 'is-dev': app.test }" :aria-current="currentAppCode === app.code ? 'true' : undefined" :aria-label="`${app.code === 'main' ? 'Mira Harness' : app.name}${app.test ? ' dev' : ''}`" @click="switchApp(app.code)">
               <img v-if="app.code === 'main'" class="mira-app-switcher__logo" :src="miraMark" alt="" />
+              <img v-else-if="app.iconUrl" class="mira-app-switcher__logo" :src="app.iconUrl" alt="" />
               <AppIcon v-else :name="app.icon || 'Grid'" />
-              <span>{{ app.code === 'main' ? 'Mira Harness' : app.name }}</span>
-              <AppIcon v-if="currentAppCode === app.code" name="Check" />
+              <span class="mira-app-switcher__name">{{ app.code === 'main' ? 'Mira Harness' : app.name }}</span>
+              <span v-if="app.test || currentAppCode === app.code" class="mira-app-switcher__status" aria-hidden="true">
+                <DevBadge v-if="app.test" />
+                <i v-if="currentAppCode === app.code" class="mira-app-switcher__current-dot" />
+              </span>
             </button>
           </nav>
         </el-popover>
@@ -70,6 +74,7 @@ import AppMain from './components/AppMain.vue'
 import WindowsTitlebar from './components/WindowsTitlebar.vue'
 import SearchBar from '@/components/SearchBar/index.vue'
 import miraMark from '@/asset/mira-mark.png'
+import DevBadge from '@/components/DevBadge.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,6 +96,7 @@ onUnmounted(() => { removeZoomListener?.(); removeFullScreenListener?.() })
 const showAppNavigation = computed(() => route.path === '/workspace/harness-react' && Boolean(appNavigation.state))
 const appMenuVisible = ref(false)
 const currentAppCode = computed(() => getAppCodeFromPath(route.path))
+const currentApp = computed(() => findRuntimeMicroApp(currentAppCode.value))
 const currentAppName = computed(() => {
   if (currentAppCode.value === 'main') return 'Mira Harness'
   return findRuntimeMicroApp(currentAppCode.value)?.name || '应用'
@@ -164,12 +170,22 @@ function openSettings() {
 
 <style lang="scss">
 .mira-app-switcher-popper.el-popover { padding: 5px; border-color: var(--cp-border); background: var(--cp-bg-overlay); }
-.mira-app-switcher { display: flex; flex-direction: column; gap: 2px; }
+.mira-app-switcher { display: flex; flex-direction: column; gap: 2px; transform-origin: top; }
 .mira-app-switcher button { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 10px; padding: 5px 8px; border: 0; border-radius: var(--cp-radius-sm); color: var(--cp-text); background: transparent; font-size: 13px; text-align: left; }
 .mira-app-switcher button:hover,
 .mira-app-switcher button:focus-visible,
 .mira-app-switcher button.is-current { background: var(--cp-bg-hover); outline: none; }
-.mira-app-switcher button span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-app-switcher__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mira-app-switcher button .app-icon { flex: 0 0 auto; font-size: 16px; }
 .mira-app-switcher__logo { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
+.mira-app-switcher__status { display: grid; flex: 0 0 24px; height: 18px; place-items: center; }
+.mira-app-switcher__current-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cp-success); }
+.mira-app-switcher .is-current .mira-dev-badge { display: none; }
+.mira-app-switcher .is-current:is(:hover, :focus-visible) .mira-dev-badge { display: block; }
+.mira-app-switcher .is-current.is-dev:is(:hover, :focus-visible) .mira-app-switcher__current-dot { display: none; }
+.mira-app-menu-enter-active { transition: opacity 150ms cubic-bezier(.16, 1, .3, 1); }
+.mira-app-menu-leave-active { transition: opacity 100ms ease-in; pointer-events: none; }
+.mira-app-menu-enter-from, .mira-app-menu-leave-to { opacity: 0; }
+.mira-app-menu-enter-active .mira-app-switcher { animation: settings-surface-enter 150ms cubic-bezier(.16, 1, .3, 1) both; }
+.mira-app-menu-leave-active .mira-app-switcher { animation: settings-surface-exit 100ms ease-in both; }
 </style>

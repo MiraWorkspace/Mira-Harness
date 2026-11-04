@@ -87,6 +87,11 @@ export interface MicroApp {
   code: string
   entry: MicroAppEntry
   icon?: string
+  iconUrl?: string
+  version?: string
+  test?: boolean
+  localApp?: boolean
+  entryPath?: string
   sort: number
   enabled: boolean
   integrationMode: MicroAppIntegrationMode
@@ -99,6 +104,8 @@ export interface ApplicationOption {
   code: string
   name: string
   icon?: string
+  iconUrl?: string
+  test?: boolean
   type: 'main' | 'microapp'
 }
 
@@ -109,6 +116,15 @@ export interface PlatformSnapshot {
 }
 
 export interface PlatformApi {
+  apps: {
+    scan(): Promise<import('@/config/miraApps').AppsState>
+    setEnabled(id: string, enabled: boolean): Promise<import('@/config/miraApps').AppsState>
+    refreshCatalog(url?: string): Promise<import('@/config/miraApps').AppsState>
+    install(id: string): Promise<import('@/config/miraApps').AppsState>
+    uninstall(id: string): Promise<import('@/config/miraApps').AppsState>
+    openDirectory(id: string): Promise<void>
+    restart(): Promise<void>
+  }
   requestMiraWorkflow(request: import('@/config/miraFlowWorkbench').MiraFlowWorkbenchRequest): Promise<unknown>
   hooks: {
     list(params?: { projectId?: string }): Promise<import('@/config/miraHooks').MiraHookItem[]>

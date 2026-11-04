@@ -116,7 +116,7 @@ export function getMicroAppChildPath(app: MicroApp, platformPath: string) {
 export function resolveMicroAppEntryUrl(app: MicroApp, platformPath: string, entry: string) {
   const entryUrl = resolveHttpUrl(entry)
   const childPath = getMicroAppChildPath(app, platformPath)
-  return childPath ? resolveHttpUrl(childPath, entryUrl) : entryUrl
+  return childPath ? resolveHttpUrl(childPath, entryUrl) : app.entryPath ? resolveHttpUrl(app.entryPath, entryUrl) : entryUrl
 }
 
 export function resolvePlatformPathForChild(app: MicroApp, childPath: string) {

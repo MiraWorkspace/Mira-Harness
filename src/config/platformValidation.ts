@@ -66,8 +66,10 @@ export function validateMicroApps(apps: MicroApp[]) {
     } else {
       if (app.entry.type === 'url') {
         assertHttpUrl(app.entry.url, '内嵌框架入口地址')
+      } else if (app.entry.type === 'local-directory') {
+        if (!app.entry.directory.trim()) throw new Error('微应用必须选择本地构建目录')
       } else if (app.entry.type !== 'builtin') {
-        throw new Error('内嵌框架必须填写入口地址或使用内置资源包')
+        throw new Error('内嵌框架必须填写入口地址或使用本地资源')
       }
       if (app.runtimeConfig.kind !== 'iframe') throw new Error('内嵌框架运行配置无效')
     }

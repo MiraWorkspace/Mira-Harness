@@ -84,7 +84,7 @@ app.whenReady().then(async () => {
     const enabled = services.database.getSnapshot().preferences.keepComputerAwake === true
     keepAwake.update(enabled, enabled)
   }, 1000)
-  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler })
+  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, apps: services.apps, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler })
   ipcMain.handle('mira:browser-bind', (event, sessionId, browserId, guestId) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error('浏览器绑定仅允许主窗口调用')
     if (typeof sessionId !== 'string' || typeof browserId !== 'string' || !Number.isSafeInteger(guestId)) throw new Error('浏览器绑定参数无效')

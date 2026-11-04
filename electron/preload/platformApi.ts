@@ -1,6 +1,15 @@
 import { ipcRenderer } from 'electron'
 
 export const platformApi = {
+  apps: {
+    scan: () => ipcRenderer.invoke('platform:apps', 'scan'),
+    setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('platform:apps', 'setEnabled', { id, enabled }),
+    refreshCatalog: (url?: string) => ipcRenderer.invoke('platform:apps', 'refreshCatalog', { url }),
+    install: (id: string) => ipcRenderer.invoke('platform:apps', 'install', { id }),
+    uninstall: (id: string) => ipcRenderer.invoke('platform:apps', 'uninstall', { id }),
+    openDirectory: (id: string) => ipcRenderer.invoke('platform:apps', 'openDirectory', { id }),
+    restart: () => ipcRenderer.invoke('platform:apps', 'restart'),
+  },
   bindHostedBrowser: (sessionId: string, browserId: string, guestId: number) => ipcRenderer.invoke('mira:browser-bind', sessionId, browserId, guestId),
   hooks: {
     list: (params: unknown = {}) => ipcRenderer.invoke('platform:hooks', 'hooks.list', params),

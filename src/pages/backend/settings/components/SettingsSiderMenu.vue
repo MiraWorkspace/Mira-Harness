@@ -20,7 +20,6 @@
           >
             <svg class="settings-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="iconPaths[item.key]" /></svg>
             <span>{{ item.label }}</span>
-            <small v-if="item.key === 'app-extensions'" class="settings-nav-status">规划中</small>
           </button>
         </nav>
       </section>
@@ -194,7 +193,6 @@ function goToSection(path: string) {
 .settings-nav-item:hover { background: var(--cp-bg-hover); }
 .settings-nav-item.is-active { background: color-mix(in srgb, var(--cp-text) 8%, var(--cp-bg-elevated)); color: var(--cp-text); font-weight: 500; }
 .settings-nav-item.is-active .settings-nav-icon { color: var(--cp-text); }
-.settings-nav-status { margin-left: auto; font-size: var(--settings-text-small); color: var(--cp-text-secondary); font-weight: 400; }
 .back-button:focus-visible,
 .settings-nav-item:focus-visible { outline: 2px solid var(--cp-primary); outline-offset: -2px; }
 @media (prefers-reduced-motion: no-preference) {

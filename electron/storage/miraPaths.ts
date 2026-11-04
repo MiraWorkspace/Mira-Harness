@@ -12,6 +12,7 @@ export class MiraPaths {
   readonly logs: string
   readonly skills: string
   readonly sharedSkills: string
+  readonly apps: string
 
   constructor(home: string) {
     this.root = join(home, '.mira')
@@ -24,6 +25,7 @@ export class MiraPaths {
     this.logs = join(this.root, 'logs')
     this.skills = join(this.root, 'skills')
     this.sharedSkills = join(home, '.agents', 'skills')
+    this.apps = join(this.root, 'apps')
   }
 
   stateDatabase() { return join(this.root, 'state.sqlite') }
@@ -45,7 +47,7 @@ export class MiraPaths {
   projectTrash(projectId: string) { return join(this.trash, projectId) }
 
   ensure() {
-    [this.root, this.config, this.workspace, this.sessions, this.attachments, this.trash, this.memories, this.logs, this.skills]
+    [this.root, this.config, this.workspace, this.sessions, this.attachments, this.trash, this.memories, this.logs, this.skills, this.apps]
       .forEach(path => mkdirSync(path, { recursive: true }))
     if (!existsSync(this.globalAgents())) writeFileSync(this.globalAgents(), '', 'utf8')
     return this

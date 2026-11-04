@@ -1,5 +1,7 @@
 import { PlatformDatabase } from '../storage/database'
 import { LocalMicroAppServer } from '../adapters/localMicroAppServer'
+import { MiraApps } from './miraApps'
+import { version as shellVersion } from '../../package.json'
 import { electronWebRequest } from '../adapters/electronWebRequest'
 import { HarnessRuntime } from './harnessRuntime'
 import { resolveMiraRipgrepPath } from './miraRuntimeTools'
@@ -28,6 +30,7 @@ export interface PlatformServices {
   workspaceMedia: MiraWorkspaceMedia
   database: PlatformDatabase
   localMicroAppServer: LocalMicroAppServer
+  apps: MiraApps
   harnessRuntime: HarnessRuntime
   miraFlowController: MiraFlowController
   mcpConfigStore: McpConfigStore
@@ -85,11 +88,14 @@ export async function createPlatformServices({ miraPaths, publishHarnessEvent }:
     builtinRoots: { 'harness-react-app': app.isPackaged ? join(process.resourcesPath, 'harness-react-app') : resolve(app.getAppPath(), 'dist/harness-react-app') },
   })
   const preferences = database.getSnapshot().preferences
+  const apps = new MiraApps(miraPaths, database, localMicroAppServer, shellVersion, (input, init) => net.fetch(input, init))
+  apps.scan()
   const preferredPort = typeof preferences.localMicroAppPort === 'number' ? preferences.localMicroAppPort : undefined
-  await localMicroAppServer.start(database.getSnapshot().microApps, preferredPort)
+  await localMicroAppServer.start(apps.snapshot().microApps, preferredPort)
   if (localMicroAppServer.port && preferences.localMicroAppPort !== localMicroAppServer.port) {
     database.savePreference('localMicroAppPort', localMicroAppServer.port)
   }
+  apps.scan()
 
-  return { computerSettings, workspaceHtml, workspaceMedia, database, localMicroAppServer, harnessRuntime, miraFlowController, mcpConfigStore, mcpManager, mcpAuthorization, automationScheduler, skillMarketplace, cleanupExpiredTrash }
+  return { computerSettings, workspaceHtml, workspaceMedia, database, localMicroAppServer, apps, harnessRuntime, miraFlowController, mcpConfigStore, mcpManager, mcpAuthorization, automationScheduler, skillMarketplace, cleanupExpiredTrash }
 }
