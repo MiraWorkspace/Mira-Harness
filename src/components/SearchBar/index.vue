@@ -2,15 +2,16 @@
   <el-dialog
     v-model="paletteStore.visible"
     class="search-dialog"
+    modal-class="mira-search-overlay"
     :show-close="false"
     :close-on-click-modal="true"
-    :width="isMobile ? 'calc(100% - 24px)' : '680px'"
-    top="12vh"
+    width="min(620px, calc(100% - 48px))"
+    top="100px"
     @opened="focusInput"
     @close="handleClose"
   >
     <div ref="searchContainerRef" class="search-container">
-      <el-input
+      <div class="search-input-row"><el-input
         ref="searchInputRef"
         v-model="keyword"
         size="large"
@@ -19,14 +20,7 @@
         @keydown.up.prevent="moveActive(-1)"
         @keydown.down.prevent="moveActive(1)"
         @keydown.enter.prevent="selectActive"
-      ><template #prefix><AppIcon name="Search" /></template></el-input>
-
-      <div class="search-hints" aria-label="键盘操作提示">
-        <span><kbd>{{ shortcutModifier }}</kbd><kbd>K</kbd> 打开</span>
-        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-        <span><kbd>↵</kbd> 确认</span>
-        <span><kbd>Esc</kbd> 关闭</span>
-      </div>
+      ><template #prefix><AppIcon name="Search" /></template></el-input><button class="search-close" type="button" aria-label="关闭全局搜索" @click="handleClose"><AppIcon name="Close" /></button></div>
 
       <div v-if="keyword" class="search-results">
         <template v-for="(item, index) in filteredResults" :key="item.id">
@@ -124,8 +118,6 @@ const showAllRecent = ref(false)
 const searchInputRef = ref()
 const searchContainerRef = ref<HTMLElement>()
 const isFullscreen = ref(Boolean(document.fullscreenElement))
-const isMobile = ref(window.innerWidth < 768)
-const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)
 const searchTokenCache = new Map<string, string[]>()
 
 type CommandPaletteItem = CommandNavigationItem | (Omit<CommandNavigationItem, 'category' | 'path'> & {
@@ -141,7 +133,6 @@ const categoryLabels: Record<CommandNavigationCategory | 'command', string> = {
   command: '系统操作',
 }
 
-const shortcutModifier = computed(() => isMac ? '⌘' : 'Ctrl')
 const recentResults = computed(() => paletteStore.recentItems
   .map(item => findCommandNavigation(item.id))
   .filter((item): item is CommandNavigationItem => Boolean(item))
@@ -290,10 +281,6 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function updateViewport() {
-  isMobile.value = window.innerWidth < 768
-}
-
 function updateFullscreen() {
   isFullscreen.value = Boolean(document.fullscreenElement)
 }
@@ -319,115 +306,44 @@ function scrollActiveResultIntoView() {
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
   document.addEventListener('fullscreenchange', updateFullscreen)
-  window.addEventListener('resize', updateViewport)
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   document.removeEventListener('fullscreenchange', updateFullscreen)
-  window.removeEventListener('resize', updateViewport)
 })
 </script>
 
 <style scoped lang="scss">
-.search-dialog {
-  :deep(.el-dialog) {
-    max-width: 680px;
-    margin-bottom: 0;
-    overflow: hidden;
-    background: var(--cp-bg-elevated);
-    border: 1px solid var(--cp-border-light);
-    border-radius: var(--cp-radius-md);
-    box-shadow: $shadow-xl;
-  }
-
-  :deep(.el-dialog__header) { display: none; }
-  :deep(.el-dialog__body) { padding: $spacing-lg; }
-}
-
-.search-container { min-height: 120px; }
-
-.search-hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 9px 2px 2px;
-  color: var(--cp-text-tertiary);
-  font-size: $font-xs;
-
-  span { display: inline-flex; align-items: center; gap: 3px; }
-  kbd {
-    min-width: 18px;
-    padding: 1px 4px;
-    color: var(--cp-text-secondary);
-    font: inherit;
-    line-height: 16px;
-    text-align: center;
-    background: var(--cp-bg-hover);
-    border: 1px solid var(--cp-border-light);
-    border-radius: var(--cp-radius-sm);
-  }
-}
-
-.search-results, .default-sections {
-  max-height: min(440px, 54vh);
-  margin-top: $spacing-md;
-  overflow-y: auto;
-}
-
-.default-section + .default-section { margin-top: $spacing-lg; }
-.section-heading, .result-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 $spacing-sm $spacing-xs;
-  color: var(--cp-text-secondary);
-  font-size: $font-sm;
-  font-weight: 600;
-}
-.result-section { padding-top: $spacing-sm; }
-.result-section:first-child { padding-top: 0; }
-
-.result-item {
-  display: flex;
-  width: 100%;
-  min-height: 54px;
-  align-items: center;
-  gap: $spacing-md;
-  padding: 8px $spacing-sm;
-  color: var(--cp-text);
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: var(--cp-radius-sm);
-  transition: background $transition-fast, color $transition-fast;
-
-  &:hover, &.is-active { background: var(--cp-bg-hover); }
-  &:focus-visible { outline: 2px solid var(--cp-primary); outline-offset: -2px; }
-}
-
-.result-icon { flex: 0 0 auto; color: var(--cp-primary); font-size: 19px; }
+.search-container { display: flex; max-height: calc(100dvh - 124px); flex-direction: column; }
+.search-input-row { display: flex; min-height: 52px; flex: none; align-items: center; gap: 10px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--cp-border); }
+.search-input-row :deep(.el-input) { flex: 1; }
+.search-input-row :deep(.el-input__wrapper) { padding: 0; background: transparent; box-shadow: none; }
+.search-input-row :deep(.el-input__wrapper.is-focus) { box-shadow: none; }
+.search-input-row :deep(.el-input__inner) { height: 44px; color: var(--cp-text); font-size: 14px; }
+.search-input-row :deep(.el-input__inner::placeholder), .search-input-row :deep(.el-input__prefix) { color: var(--cp-text-secondary); }
+.search-input-row :deep(.el-input__prefix) { font-size: 18px; }
+.search-close { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--cp-text-secondary); cursor: pointer; }
+.search-close:hover { background: var(--cp-bg-hover); color: var(--cp-text); }
+.search-close:focus-visible, .result-item:focus-visible { outline: 2px solid var(--cp-text); outline-offset: -2px; }
+.search-results, .default-sections { min-height: 88px; max-height: min(440px, calc(100dvh - 190px)); overflow-y: auto; overscroll-behavior: contain; padding: 4px 6px 8px; scrollbar-width: thin; }
+.default-section + .default-section { margin-top: 4px; }
+.section-heading, .result-section { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 5px; color: var(--cp-text-secondary); font-size: 12px; font-weight: 500; }
+.result-item { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--cp-text); text-align: left; cursor: pointer; transition: background 120ms ease-out; }
+.result-item:hover, .result-item.is-active { background: var(--cp-bg-hover); }
+.result-icon { flex: 0 0 16px; color: var(--cp-text-secondary); font-size: 16px; }
 .result-content { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.result-title { overflow: hidden; font-size: $font-base; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.result-path, .result-category { overflow: hidden; color: var(--cp-text-tertiary); font-size: $font-xs; text-overflow: ellipsis; white-space: nowrap; }
+.result-title { overflow: hidden; font-size: 14px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.result-path, .result-category { overflow: hidden; color: var(--cp-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .result-category { flex: 0 0 auto; }
-.search-empty { padding: $spacing-lg 0 $spacing-sm; }
-
-@include media-max($breakpoint-md) {
-  .search-dialog :deep(.el-dialog__body) { padding: $spacing-md; }
-  .search-hints { gap: 6px 10px; }
-  .result-category { display: none; }
-}
+.search-empty { padding: 8px 0; }
 </style>
 
 <style lang="scss">
-.el-dialog.search-dialog {
-  .el-dialog__header {
-    display: none;
-    padding: 0;
-    margin: 0;
-    border-bottom: 0;
-  }
-}
+.mira-search-overlay.el-overlay { background: transparent; }
+.el-dialog.search-dialog { max-height: calc(100dvh - 124px); margin-bottom: 0; overflow: hidden; padding: 0; border: 0; border-radius: 8px; background: var(--cp-bg-overlay); box-shadow: 0 16px 48px rgb(0 0 0 / 22%), 0 4px 12px rgb(0 0 0 / 12%); }
+.el-dialog.search-dialog .el-dialog__header { display: none; padding: 0; margin: 0; border: 0; }
+.el-dialog.search-dialog .el-dialog__body { padding: 0; }
+.dialog-fade-enter-active .el-dialog.search-dialog { animation: settings-surface-enter 180ms cubic-bezier(.16, 1, .3, 1) both; }
+.dialog-fade-leave-active .el-dialog.search-dialog { animation: settings-surface-exit 100ms ease-in both; }
 </style>

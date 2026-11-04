@@ -50,6 +50,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
+
 function openSettingsPage(path: string) {
   const currentRoute = router.currentRoute.value
   if (currentRoute.path === path) return

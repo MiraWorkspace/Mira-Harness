@@ -41,6 +41,7 @@
           :url="entryUrl"
           :title="app.name"
           :policy="app.runtimeConfig.kind === 'iframe' ? app.runtimeConfig.iframe : undefined"
+          :sync-theme="app.localApp"
           fill
         />
       </template>
