@@ -2,8 +2,14 @@ import { ipcRenderer } from 'electron'
 
 export const platformApi = {
   apps: {
+    onChanged: (listener: (state: import('../../src/config/miraApps').AppsState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import('../../src/config/miraApps').AppsState) => listener(state)
+      ipcRenderer.on('platform:apps-changed', handler)
+      return () => { ipcRenderer.removeListener('platform:apps-changed', handler) }
+    },
     scan: () => ipcRenderer.invoke('platform:apps', 'scan'),
     setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('platform:apps', 'setEnabled', { id, enabled }),
+    setBlocked: (id: string, blocked: boolean) => ipcRenderer.invoke('platform:apps', 'setBlocked', { id, blocked }),
     refreshCatalog: (url?: string) => ipcRenderer.invoke('platform:apps', 'refreshCatalog', { url }),
     install: (id: string) => ipcRenderer.invoke('platform:apps', 'install', { id }),
     uninstall: (id: string) => ipcRenderer.invoke('platform:apps', 'uninstall', { id }),

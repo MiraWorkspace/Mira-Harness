@@ -113,3 +113,9 @@ https://github.com/OWNER/REPO/releases/download/apps-catalog/apps-catalog.json
 本次验证：7 个相关测试文件共 177 项通过，`vue-tsc --noEmit`、生产构建和 `git diff --check` 通过。独立 macOS Electron 实例从真实目录安装后显示“重启”，点击“稍后”保留状态；点击“立即重启”成功重新启动，正式 Workbench 出现在选择器并打开 17 个网站的首页，官方列表同一行变为“卸载”。实机未点击最终卸载，文件删除及待重启状态由自动化测试覆盖。额外执行的 `desktopShutdown.test.ts` 有 3 项既有失败：HEAD 中的 Electron mock 缺少 `powerSaveBlocker`，未修改此无关测试。
 
 本次简化涉及的 Harness 文件：`src/pages/backend/appExtensions/index.vue`、`src/config/miraApps.ts`、`electron/services/miraApps.ts`、`electron/ipc/platformIpc.ts`、`electron/preload/platformApi.ts`、`src/types/index.ts`、`tests/miraAppExtensions.test.ts`、`tests/miraApps.test.ts`、`tests/platformIpc.test.ts` 及本文档。Workbench 源码未改动。
+
+## 手动删除应用的同步（2026-11-05）
+
+主进程监听 `~/.mira/apps/` 直属目录变化，合并 150ms 内的文件事件后重新扫描，将变化通知主窗口。手动删除子应用目录后，资源入口、标题栏选择器和已打开的应用扩展页同步更新；当前正在显示的应用不存在时，使用替换导航自动返回 Mira Harness，不显示空白页或删除错误提示。删除其他应用不打断当前应用；设置页保留当前页面，但将失效的 `from` 返回地址改为 Harness。监听在退出时关闭，安装后等待重启的规则保持不变。
+
+测试覆盖真实文件系统删除、扫描与监听事件交错、退出取消待处理事件、当前应用回退、其他应用不受影响、设置返回地址修正、启动时删除及监听注销。类型检查、生产构建和相关测试通过；本轮 macOS 实机窗口验证因电脑锁屏未完成。

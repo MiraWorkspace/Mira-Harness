@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { unzipSync } from 'fflate'
@@ -9,6 +9,7 @@ import type { LocalMicroAppServer } from '../adapters/localMicroAppServer'
 
 interface AppDatabase { getSnapshot(): PlatformSnapshot; savePreference(key: string, value: unknown): unknown }
 const ENABLED_KEY = 'localAppsEnabled'
+const BLOCKED_KEY = 'blockedApps'
 const URL_KEY = 'appsCatalogUrl'
 const MAX_CATALOG_BYTES = 1024 * 1024
 function inside(root: string, path: string) { const suffix = relative(root, path); return !isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) }
@@ -30,6 +31,8 @@ export class MiraApps {
   private refreshing?: Promise<AppsState>
   private installing = false
   private pendingRestart = new Map<string, 'install' | 'uninstall'>()
+  private watcher?: FSWatcher
+  private scanTimer?: ReturnType<typeof setTimeout>
 
   constructor(private readonly paths: MiraPaths, private readonly database: AppDatabase, private readonly server: LocalMicroAppServer, private readonly shellVersion: string, private readonly fetcher: typeof fetch) {
     const cache = join(paths.config, 'apps-catalog-cache.json')
@@ -43,6 +46,30 @@ export class MiraApps {
         this.cached = true
       } catch { this.catalogError = '目录缓存无效，请重新检查更新' }
     }
+  }
+
+  startWatching(onChange: (state: AppsState) => void) {
+    this.stopWatching()
+    mkdirSync(this.paths.apps, { recursive: true })
+    let previous = JSON.stringify(this.installed)
+    this.watcher = watch(this.paths.apps, { persistent: false }, () => {
+      clearTimeout(this.scanTimer)
+      this.scanTimer = setTimeout(() => {
+        this.scanTimer = undefined
+        const state = this.scan()
+        const current = JSON.stringify(state.installed)
+        if (current !== previous) { previous = current; onChange(state) }
+      }, 150)
+      this.scanTimer.unref()
+    })
+    this.watcher.on('error', () => this.stopWatching())
+  }
+
+  stopWatching() {
+    clearTimeout(this.scanTimer)
+    this.scanTimer = undefined
+    this.watcher?.close()
+    this.watcher = undefined
   }
 
   scan() {
@@ -108,7 +135,9 @@ export class MiraApps {
     for (const app of snapshot.microApps) if (app.localApp) app.iconUrl = this.installed.find(item => item.id === app.code)?.iconUrl
     const url = typeof snapshot.preferences[URL_KEY] === 'string' && snapshot.preferences[URL_KEY] ? snapshot.preferences[URL_KEY] as string : DEFAULT_APPS_CATALOG_URL
     const matching = this.cachedUrl === url
-    return { directory: this.paths.apps, installed: this.installed.map(item => ({ ...item })), pendingRestart: [...this.pendingRestart].map(([id, action]) => ({ id, action })), catalog: matching ? this.catalog : undefined, catalogUrl: url, checkedAt: matching ? this.checkedAt : undefined, cached: matching && this.cached, catalogError: this.catalogError, snapshot }
+    const storedBlocked = snapshot.preferences[BLOCKED_KEY]
+    const blocked = Array.isArray(storedBlocked) ? [...new Set(storedBlocked.filter((id): id is string => typeof id === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(id)))].sort() : []
+    return { directory: this.paths.apps, installed: this.installed.map(item => ({ ...item })), blocked, pendingRestart: [...this.pendingRestart].map(([id, action]) => ({ id, action })), catalog: matching ? this.catalog : undefined, catalogUrl: url, checkedAt: matching ? this.checkedAt : undefined, cached: matching && this.cached, catalogError: this.catalogError, snapshot }
   }
 
   setEnabled(id: string, enabled: boolean) {
@@ -116,6 +145,17 @@ export class MiraApps {
     const previous = this.database.getSnapshot().preferences[ENABLED_KEY] as Record<string, boolean> | undefined
     this.database.savePreference(ENABLED_KEY, { ...previous, [id]: enabled })
     this.syncResources()
+    return this.state()
+  }
+
+  setBlocked(id: string, blocked: boolean) {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(id) || typeof blocked !== 'boolean') throw new Error('应用状态无效')
+    const state = this.state()
+    if (!state.catalog?.apps.some(app => app.id === id) && !state.installed.some(app => app.id === id)) throw new Error('未找到应用')
+    const next = new Set(state.blocked)
+    if (blocked) next.add(id)
+    else next.delete(id)
+    this.database.savePreference(BLOCKED_KEY, [...next].sort())
     return this.state()
   }
 

@@ -27,7 +27,7 @@ export interface AppRelease {
 export interface CatalogApp { id: string; name: string; description: string; repository: string; icon?: string; releases: AppRelease[] }
 export interface AppsCatalog { schemaVersion: 1; revision: number; publishedAt: string; example?: boolean; notice?: string; apps: CatalogApp[] }
 export interface InstalledApp { id: string; name: string; version?: string; description?: string; iconUrl?: string; test: boolean; enabled: boolean; directory: string; error?: string }
-export interface AppsState { directory: string; installed: InstalledApp[]; pendingRestart: { id: string; action: 'install' | 'uninstall' }[]; catalog?: AppsCatalog; catalogUrl: string; checkedAt?: string; cached: boolean; catalogError?: string; snapshot: PlatformSnapshot }
+export interface AppsState { directory: string; installed: InstalledApp[]; blocked?: string[]; pendingRestart: { id: string; action: 'install' | 'uninstall' }[]; catalog?: AppsCatalog; catalogUrl: string; checkedAt?: string; cached: boolean; catalogError?: string; snapshot: PlatformSnapshot }
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 export function compareAppVersions(a: string, b: string): number {

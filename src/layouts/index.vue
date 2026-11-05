@@ -75,6 +75,7 @@ import WindowsTitlebar from './components/WindowsTitlebar.vue'
 import SearchBar from '@/components/SearchBar/index.vue'
 import miraMark from '@/asset/mira-mark.png'
 import DevBadge from '@/components/DevBadge.vue'
+import { observeLocalApps } from '@/platform/localApps'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,13 +87,15 @@ const desktopZoomFactor = ref(window.platform?.getDesktopZoomFactor?.() ?? 1)
 const isFullScreen = ref(window.platform?.isFullScreen?.() ?? false)
 let removeZoomListener: (() => void) | undefined
 let removeFullScreenListener: (() => void) | undefined
+let removeAppsListener: (() => void) | undefined
 onMounted(() => {
+  removeAppsListener = observeLocalApps(router)
   removeZoomListener = window.platform?.onDesktopZoomChanged?.(factor => { if (Number.isFinite(factor) && factor > 0) desktopZoomFactor.value = factor })
   removeFullScreenListener = window.platform?.onFullScreenChanged?.(value => { isFullScreen.value = value })
   desktopZoomFactor.value = window.platform?.getDesktopZoomFactor?.() ?? 1
   isFullScreen.value = window.platform?.isFullScreen?.() ?? false
 })
-onUnmounted(() => { removeZoomListener?.(); removeFullScreenListener?.() })
+onUnmounted(() => { removeZoomListener?.(); removeFullScreenListener?.(); removeAppsListener?.() })
 const showAppNavigation = computed(() => route.path === '/workspace/harness-react' && Boolean(appNavigation.state))
 const appMenuVisible = ref(false)
 const currentAppCode = computed(() => getAppCodeFromPath(route.path))

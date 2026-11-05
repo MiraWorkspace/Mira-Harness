@@ -110,11 +110,12 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
   const browserProtection = new MiraBrowserProtection()
   const archivedSelections = new Map<string, { snapshotId: string; ids: readonly string[]; webContentsId: number }>()
   ipcMain.handle('platform:get-snapshot', () => apps?.snapshot() ?? database.getSnapshot())
-  ipcMain.handle('platform:apps', (event, action: string, input: { id?: string; enabled?: boolean; url?: string } = {}) => {
+  ipcMain.handle('platform:apps', (event, action: string, input: { id?: string; enabled?: boolean; blocked?: boolean; url?: string } = {}) => {
     requireMainFrame(event)
     if (!apps) throw new Error('应用服务不可用')
     if (action === 'scan') return apps.scan()
     if (action === 'setEnabled') return apps.setEnabled(boundedString(input.id, '应用 ID', 64), input.enabled!)
+    if (action === 'setBlocked') return apps.setBlocked(boundedString(input.id, '应用 ID', 64), input.blocked!)
     if (action === 'refreshCatalog') return apps.refreshCatalog(input.url === undefined ? undefined : boundedString(input.url, '目录地址', 2048))
     if (action === 'install') return apps.install(boundedString(input.id, '应用 ID', 64))
     if (action === 'uninstall') return apps.uninstall(boundedString(input.id, '应用 ID', 64))

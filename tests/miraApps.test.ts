@@ -15,7 +15,8 @@ import type { PlatformSnapshot } from '../src/types'
 
 const roots: string[] = []
 const servers: LocalMicroAppServer[] = []
-afterEach(async () => { vi.unstubAllGlobals(); await Promise.all(servers.splice(0).map(server => server.stop())); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+const services: MiraApps[] = []
+afterEach(async () => { services.splice(0).forEach(apps => apps.stopWatching()); vi.unstubAllGlobals(); await Promise.all(servers.splice(0).map(server => server.stop())); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 const manifest = { manifestVersion: 1, id: 'mira-workbench-test', name: 'Mira Workbench', version: '0.1.0', entry: 'index.html', icon: 'logo.png', test: true, minShellVersion: '0.1.0-beta.1', platformApi: { major: 1, minor: 0 }, requiredCapabilities: [] }
 const url = 'https://github.com/tuyn53/Mira-Harness/releases/download/apps-catalog/apps-catalog.json'
 function fixture(fetcher: typeof fetch = vi.fn()) {
@@ -24,7 +25,7 @@ function fixture(fetcher: typeof fetch = vi.fn()) {
   const snapshot: PlatformSnapshot = { mainMenus: [], microApps: structuredClone(microApps), preferences: {} }
   const database = { getSnapshot: () => structuredClone(snapshot), savePreference: (key: string, value: unknown) => { snapshot.preferences[key] = value } }
   const server = new LocalMicroAppServer(); servers.push(server)
-  const create = () => new MiraApps(paths, database, server, '0.1.0-beta.1', fetcher)
+  const create = () => { const apps = new MiraApps(paths, database, server, '0.1.0-beta.1', fetcher); services.push(apps); return apps }
   const directory = join(paths.apps, manifest.id)
   mkdirSync(directory)
   writeFileSync(join(directory, 'app-manifest.json'), JSON.stringify(manifest)); writeFileSync(join(directory, 'index.html'), '<h1>Workbench test</h1>'); writeFileSync(join(directory, 'logo.png'), 'logo')
@@ -62,6 +63,36 @@ describe('application package and remote catalog contract', () => {
 })
 
 describe('local applications discovery and lifecycle', () => {
+  it('detects Finder-style removal without manual scanning and invalidates its resource entry', async () => {
+    const f = fixture()
+    f.apps.scan(); await f.server.start(f.apps.snapshot().microApps); f.apps.scan()
+    const changed = vi.fn()
+    f.apps.startWatching(changed)
+    rmSync(f.directory, { recursive: true })
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce())
+    expect(changed.mock.calls[0][0].installed).toEqual([])
+    expect(changed.mock.calls[0][0].snapshot.microApps.map((app: { code: string }) => app.code)).toEqual(['mira-harness'])
+    expect(() => f.server.getEntryUrl(`micro-${manifest.id}`)).toThrow()
+  })
+
+  it('still publishes removal if a settings scan runs before the directory debounce', async () => {
+    const f = fixture(); f.apps.scan()
+    const changed = vi.fn(); f.apps.startWatching(changed)
+    rmSync(f.directory, { recursive: true }); f.apps.scan()
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce())
+    expect(changed.mock.calls[0][0].installed).toEqual([])
+  })
+
+  it('stops a queued directory scan when the app service shuts down', async () => {
+    const f = fixture(); f.apps.scan()
+    const changed = vi.fn(); f.apps.startWatching(changed)
+    rmSync(f.directory, { recursive: true })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    f.apps.stopWatching()
+    await new Promise(resolve => setTimeout(resolve, 200))
+    expect(changed).not.toHaveBeenCalled()
+  })
+
   it('serves a discovered test app and its logo, preserves disabled state across restart, and removes missing apps', async () => {
     const f = fixture()
     f.apps.scan(); await f.server.start(f.apps.snapshot().microApps)
@@ -145,6 +176,16 @@ describe('GitHub Release catalog fetching', () => {
       const state = await f.apps.refreshCatalog(url)
       expect(state.cached).toBe(true); expect(state.catalog?.apps).toHaveLength(3); expect(state.catalogError).toBeTruthy()
     }
+  })
+
+  it('persists blocked application IDs and rejects IDs absent from the catalog and local applications', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(catalog())))
+    const f = fixture(fetcher)
+    await f.apps.refreshCatalog()
+    expect(f.apps.setBlocked('mira-workbench', true).blocked).toEqual(['mira-workbench'])
+    expect(f.create().state().blocked).toEqual(['mira-workbench'])
+    expect(f.apps.setBlocked('mira-workbench', false).blocked).toEqual([])
+    expect(() => f.apps.setBlocked('unknown-app', true)).toThrow('未找到应用')
   })
 })
 

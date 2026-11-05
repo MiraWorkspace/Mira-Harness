@@ -56,6 +56,11 @@ function publishHarnessEvent(event: HarnessEvent) {
 app.whenReady().then(async () => {
   setupDevelopmentDockIcon()
   services = await createPlatformServices({ miraPaths, publishHarnessEvent })
+  services.apps.startWatching(state => {
+    BrowserWindow.getAllWindows().forEach(window => {
+      if (!window.isDestroyed()) window.webContents.send('platform:apps-changed', state)
+    })
+  })
   notifications = new MiraNotifications(services.database, () => BrowserWindow.getAllWindows().find(window => !isResourceManagerWindow(window)), sessionId => {
     showMainWindow()
     const window = BrowserWindow.getAllWindows().find(window => !isResourceManagerWindow(window))
@@ -119,6 +124,7 @@ app.on('before-quit', event => {
   clearInterval(keepAwakeTimer)
   keepAwake.dispose()
   notifications?.dispose()
+  services?.apps?.stopWatching()
   BrowserWindow.getAllWindows().forEach(window => { if (!window.isDestroyed()) window.hide() })
   destroyTray()
   services?.automationScheduler.stop()

@@ -117,8 +117,10 @@ export interface PlatformSnapshot {
 
 export interface PlatformApi {
   apps: {
+    onChanged(listener: (state: import('@/config/miraApps').AppsState) => void): () => void
     scan(): Promise<import('@/config/miraApps').AppsState>
     setEnabled(id: string, enabled: boolean): Promise<import('@/config/miraApps').AppsState>
+    setBlocked(id: string, blocked: boolean): Promise<import('@/config/miraApps').AppsState>
     refreshCatalog(url?: string): Promise<import('@/config/miraApps').AppsState>
     install(id: string): Promise<import('@/config/miraApps').AppsState>
     uninstall(id: string): Promise<import('@/config/miraApps').AppsState>
