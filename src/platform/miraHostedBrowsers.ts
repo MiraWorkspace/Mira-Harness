@@ -11,6 +11,7 @@ export type MiraHostedBrowserElement = HTMLElement & {
   goBack(): void
   goForward(): void
   reload(): void
+  stop(): void
   openDevTools(): void
   getWebContentsId(): number
   loadURL(url: string): Promise<void>
@@ -64,7 +65,7 @@ export class MiraHostedBrowsers {
   private pages = new Map<string, MiraHostedPage>()
   private pending = new Map<string, { valid: boolean; visible: boolean }>()
   private pickerSequence = 0
-  constructor(private stage: () => HTMLElement | undefined, private send: (state: MiraHostedBrowserState) => void, private bind?: (sessionId: string, browserId: string, guestId: number) => Promise<void>) {}
+  constructor(private stage: () => HTMLElement | undefined, private send: (state: MiraHostedBrowserState) => void, private bind?: (sessionId: string, browserId: string, guestId: number) => Promise<void>, private partition = 'persist:mira-harness-browser') {}
   private key(sessionId: string, browserId: string) { return JSON.stringify([sessionId, browserId]) }
   private current(page: MiraHostedPage) { return this.pages.get(this.key(page.sessionId, page.browserId)) === page }
   async request(call: MiraBrowserCall, authorize: (guestId?: number) => Promise<unknown>) {
@@ -159,7 +160,7 @@ export class MiraHostedBrowsers {
     Object.assign(page.container.style, { position: 'absolute', left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px`, overflow: 'hidden', zIndex: '2', display: page.element.style.display, clipPath: browserClipPath({ x, y, width, height }, page.presentation?.exclusions) })
     Object.assign(page.element.style, { position: 'absolute', left: '0', top: '0', width: `${width}px`, height: `${height}px`, transform: '', transformOrigin: '', border: '0', background: '#fff' })
   }
-  control(sessionId: string, action: 'back' | 'forward' | 'reload' | 'devtools' | 'hide' | 'show' | 'close', browserId = 'browser') {
+  control(sessionId: string, action: 'back' | 'forward' | 'reload' | 'stop' | 'devtools' | 'hide' | 'show' | 'close', browserId = 'browser') {
     const key = this.key(sessionId, browserId), page = this.pages.get(key)
     if (!page) return
     if (action === 'close') {
@@ -177,6 +178,7 @@ export class MiraHostedBrowsers {
     if (action === 'back' && page.element.canGoBack()) page.element.goBack()
     if (action === 'forward' && page.element.canGoForward()) page.element.goForward()
     if (action === 'reload') page.element.reload()
+    if (action === 'stop') page.element.stop()
     if (action === 'devtools' && page.ready) page.element.openDevTools()
   }
   async navigate(sessionId: string, url: string, bounds: HarnessBrowserBounds, browserId = 'browser', visible = true) {
@@ -195,7 +197,10 @@ export class MiraHostedBrowsers {
       return
     }
     const element = document.createElement('webview') as MiraHostedBrowserElement
-    element.setAttribute('partition', 'persist:mira-harness-browser'); element.setAttribute('src', url)
+    element.setAttribute('partition', this.partition); element.setAttribute('src', url)
+    // Without this attribute Chromium blocks window.open before setWindowOpenHandler
+    // runs, so target=_blank links die silently; main-process policy still gates popups.
+    element.setAttribute('allowpopups', '')
     element.dataset.browserResourceId = browserId; element.dataset.browserSessionId = sessionId
     // Never reparent a live webview: Chromium would replace its guest and lose page/history.
     const container = document.createElement('div'); container.appendChild(element)

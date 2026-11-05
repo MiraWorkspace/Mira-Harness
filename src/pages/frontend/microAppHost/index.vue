@@ -42,6 +42,7 @@
           :title="app.name"
           :policy="app.runtimeConfig.kind === 'iframe' ? app.runtimeConfig.iframe : undefined"
           :sync-theme="app.localApp"
+          :workbench-browser="app.localApp && ['mira-workbench', 'mira-workbench-test'].includes(app.code)"
           fill
         />
       </template>

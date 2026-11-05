@@ -41,6 +41,11 @@ describe('task and resource owned native browser lifecycle', () => {
     view.registry.control('a', 'close', 'browser:one')
     guest.dispatchEvent(new Event('dom-ready')); expect(bind).toHaveBeenCalledOnce()
   })
+  it('lets target=_blank requests reach main-process policy instead of dying in the guest', async () => {
+    const view = fixture(), guest = await view.open('a', 'browser:one', 'https://mira.test/one')
+    expect(guest.hasAttribute('allowpopups')).toBe(true)
+    view.registry.clear()
+  })
 
   it('injects exact protection guest identity, protects media, pending navigation and viewport operations', async () => {
     const view = fixture(), guest = await view.open('a', 'browser:one', 'https://mira.test/one')

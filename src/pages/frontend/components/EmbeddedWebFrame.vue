@@ -1,6 +1,6 @@
 <template>
   <AppLoadingOverlay class="embedded-web-frame-loading" :class="{ 'is-fill': fill }" :active="loading" text="正在加载网页…">
-  <div class="embedded-web-frame" :class="{ 'is-fill': fill }">
+  <div ref="browserStage" class="embedded-web-frame" :class="{ 'is-fill': fill }">
     <el-result v-if="error" icon="error" title="网页无法加载" sub-title="页面打开失败，您可以尝试以下方式重试">
       <template #extra>
         <el-button v-if="resolvedUrl" type="primary" @click="openInNewWindow">在新窗口打开</el-button>
@@ -43,6 +43,7 @@ import { getIframeSandbox, resolveHttpUrl, resolveIframePolicy } from '@/config/
 import type { IframePolicy } from '@/types'
 import AppLoadingOverlay from '@/components/AppLoadingOverlay.vue'
 import { useThemeStore } from '@/stores/theme'
+import { WorkbenchBrowserHost } from '@/platform/workbenchBrowserHost'
 
 const props = withDefaults(defineProps<{
   url: string
@@ -50,6 +51,7 @@ const props = withDefaults(defineProps<{
   policy?: IframePolicy
   fill?: boolean
   syncTheme?: boolean
+  workbenchBrowser?: boolean
 }>(), {
   title: '嵌入网页',
   fill: false,
@@ -61,6 +63,8 @@ const error = ref(false)
 const reloadKey = ref(0)
 const resolvedUrl = ref('')
 const iframe = ref<HTMLIFrameElement>()
+const browserStage = ref<HTMLDivElement>()
+let workbenchBrowser: WorkbenchBrowserHost | undefined
 let timer: number | undefined
 
 const resolvedPolicy = computed(() => resolveIframePolicy(props.policy))
@@ -99,6 +103,12 @@ function handleLoad() {
   clearTimer()
   loading.value = false
   syncTheme()
+}
+
+function connectWorkbenchBrowser(event: MessageEvent) {
+  if (!props.workbenchBrowser || !iframe.value || !browserStage.value || !resolvedUrl.value || typeof (document.createElement('webview') as HTMLElement & { getWebContentsId?: unknown }).getWebContentsId !== 'function') return
+  workbenchBrowser ??= new WorkbenchBrowserHost(iframe.value, browserStage.value)
+  workbenchBrowser.connect(event, resolvedUrl.value)
 }
 
 function handleError() {
@@ -146,20 +156,25 @@ function relayWorkbenchBrowserEvent(event: MessageEvent) {
 }
 
 watch([() => props.url, () => props.policy], startLoading, { immediate: true, deep: true })
+watch(frameKey, () => { workbenchBrowser?.dispose(); workbenchBrowser = undefined })
 watch(() => themeStore.themeMode, syncTheme)
 onMounted(() => {
   window.addEventListener('message', relayShortcut)
   window.addEventListener('message', relayWorkbenchBrowserEvent)
+  window.addEventListener('message', connectWorkbenchBrowser)
 })
 onBeforeUnmount(() => {
   clearTimer()
   window.removeEventListener('message', relayShortcut)
   window.removeEventListener('message', relayWorkbenchBrowserEvent)
+  window.removeEventListener('message', connectWorkbenchBrowser)
+  workbenchBrowser?.dispose()
 })
 </script>
 
 <style scoped lang="scss">
 .embedded-web-frame {
+  position: relative;
   min-height: 560px;
 
   &.is-fill {
