@@ -8,10 +8,12 @@ vi.mock('../electron/bootstrap/miraAbout', () => ({ showMiraAboutDialog: about }
 
 const electron = vi.hoisted(() => {
   const listeners = new Map<string, Set<Function>>()
+  const browserSession = { getUserAgent: vi.fn(() => 'Mozilla/5.0 Chrome/140.0.0.0 Electron/39.1.0'), setUserAgent: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeSendHeaders: vi.fn() } }
   return { menu: [] as any[], focused: undefined as any, listeners,
     on: vi.fn((channel: string, listener: Function) => { if (!listeners.has(channel)) listeners.set(channel, new Set()); listeners.get(channel)!.add(listener) }),
     off: vi.fn((channel: string, listener: Function) => listeners.get(channel)?.delete(listener)),
     openExternal: vi.fn(async () => undefined),
+    fromPartition: vi.fn(() => browserSession), browserSession,
   }
 })
 vi.mock('electron', () => ({
@@ -37,7 +39,7 @@ vi.mock('electron', () => ({
   },
   Menu: { buildFromTemplate: (template: any[]) => template, setApplicationMenu: (template: any[]) => { electron.menu = template } },
   screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
-  nativeImage: {}, shell: { openExternal: electron.openExternal }, Tray: class {}, webUtils: {}, webFrame: { getZoomFactor: () => 1.1 },
+  nativeImage: {}, session: { fromPartition: electron.fromPartition }, shell: { openExternal: electron.openExternal }, Tray: class {}, webUtils: {}, webFrame: { getZoomFactor: () => 1.1 },
   ipcRenderer: { on: electron.on, removeListener: electron.off },
 }))
 afterEach(() => vi.restoreAllMocks())
@@ -55,6 +57,39 @@ it('opens web and email links in the system handler without creating a window or
   }
   for (const url of ['file:///tmp/example', 'javascript:alert(1)', 'custom:example']) expect(open({ url })).toEqual({ action: 'deny' })
   expect(electron.openExternal).not.toHaveBeenCalled()
+})
+
+it('admits only the approved browser guest partitions and applies browser-safe guest preferences', () => {
+  const window = createMainWindow({ getCloseWindowBehavior: () => 'quit', isQuitting: () => false })
+  expect(electron.fromPartition).toHaveBeenCalledWith('persist:mira-harness-browser')
+  expect(electron.fromPartition).toHaveBeenCalledWith('persist:mira-workbench')
+  const attach = (window.webContents.on as any).mock.calls.find(([event]: any[]) => event === 'will-attach-webview')?.[1]
+  const preferences = { preload: '/untrusted.js', nodeIntegration: true, contextIsolation: false, sandbox: false, webSecurity: false }
+  const allowed = { preventDefault: vi.fn() }
+  attach(allowed, preferences, { partition: 'persist:mira-workbench', src: 'https://chat.deepseek.com/' })
+  expect(allowed.preventDefault).not.toHaveBeenCalled()
+  expect(preferences).toEqual({ nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true })
+  const denied = { preventDefault: vi.fn() }
+  attach(denied, {}, { partition: 'persist:untrusted', src: 'https://chat.deepseek.com/' })
+  expect(denied.preventDefault).toHaveBeenCalledOnce()
+})
+
+it('keeps non-Workbench guests closed while routing Workbench tabs and login popups separately', async () => {
+  const window = createMainWindow({ getCloseWindowBehavior: () => 'quit', isQuitting: () => false })
+  const attach = (window.webContents.on as any).mock.calls.find(([event]: any[]) => event === 'did-attach-webview')?.[1]
+  const harnessGuest = { session: { setPermissionRequestHandler: vi.fn() }, setWindowOpenHandler: vi.fn(), on: vi.fn() }
+  attach({}, harnessGuest)
+  expect(harnessGuest.setWindowOpenHandler.mock.calls[0][0]({ url: 'https://example.com', disposition: 'foreground-tab' })).toEqual({ action: 'deny' })
+
+  const hostWebContents = { executeJavaScript: vi.fn(() => Promise.resolve()) }
+  const workbenchGuest = { session: electron.browserSession, hostWebContents, setWindowOpenHandler: vi.fn(), on: vi.fn() }
+  attach({}, workbenchGuest)
+  const open = workbenchGuest.setWindowOpenHandler.mock.calls[0][0]
+  expect(open({ url: 'https://example.com/path', disposition: 'foreground-tab' })).toEqual({ action: 'deny' })
+  await Promise.resolve()
+  expect(hostWebContents.executeJavaScript).toHaveBeenCalledWith(expect.stringContaining('mira:workbench-open-tab'))
+  expect(open({ url: 'https://login.example.com', disposition: 'new-window' })).toMatchObject({ action: 'allow', overrideBrowserWindowOptions: { webPreferences: { partition: 'persist:mira-workbench', nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } } })
+  expect(open({ url: 'file:///tmp/unsafe', disposition: 'new-window' })).toEqual({ action: 'deny' })
 })
 
 it('reapplies the latest saved zoom after every main-page reload rather than the creation value', () => {

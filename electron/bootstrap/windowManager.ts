@@ -1,12 +1,12 @@
 import { showMiraAboutDialog } from './miraAbout'
 import { setupMiraTextContextMenu } from './miraTextContextMenu'
-import { app, BrowserWindow, Menu, nativeImage, screen, shell, Tray, type IpcMainEvent, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, screen, session, shell, Tray, type IpcMainEvent, type MenuItemConstructorOptions } from 'electron'
 import { isResourceManagerWindow, openResourceManager } from './resourceManager'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { shouldBlockReloadShortcut } from '../windowShortcuts'
 import { isTrustedShellNavigation } from '../security/shellNavigation'
-import { HOSTED_BROWSER_PARTITION, isAllowedHostedBrowserUrl } from '../security/hostedBrowser'
+import { HOSTED_BROWSER_PARTITION, WORKBENCH_BROWSER_PARTITION, configureMiraBrowserSession, isAllowedHostedBrowserUrl, isMiraBrowserPartition, isWorkbenchPopupDisposition } from '../security/hostedBrowser'
 import { alignMiraTrafficLights, applyMiraZoom, miraTrafficLightPosition, miraZoomLevel } from './miraDesktopZoom'
 
 export interface MainWindowState { bounds: { x: number; y: number; width: number; height: number }; maximized: boolean; fullScreen: boolean }
@@ -23,6 +23,35 @@ export interface WindowManagerOptions {
 
 let tray: Tray | null = null
 let windowManagerOptions: WindowManagerOptions | undefined
+
+function notifyWorkbenchNewTab(guest: Electron.WebContents, url: string) {
+  void guest.hostWebContents?.executeJavaScript(`window.postMessage(${JSON.stringify({ type: 'mira:workbench-open-tab', url })}, '*')`).catch(() => undefined)
+}
+
+function secureWorkbenchPopup(contents: Electron.WebContents) {
+  contents.setWindowOpenHandler(({ url }) => isAllowedHostedBrowserUrl(url) ? { action: 'allow' } : { action: 'deny' })
+  contents.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
+  contents.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+}
+
+function configureWorkbenchGuest(guest: Electron.WebContents) {
+  guest.setWindowOpenHandler(({ url, disposition }) => {
+    if (!isAllowedHostedBrowserUrl(url)) return { action: 'deny' }
+    if (isWorkbenchPopupDisposition(disposition)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 560, height: 720, minWidth: 400, minHeight: 480,
+          webPreferences: { partition: WORKBENCH_BROWSER_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
+        },
+      }
+    }
+    notifyWorkbenchNewTab(guest, url)
+    return { action: 'deny' }
+  })
+  guest.on('did-create-window', popup => secureWorkbenchPopup(popup.webContents))
+}
 
 export function navigateToAbout(window?: BrowserWindow | null) {
   const target = window ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -122,6 +151,8 @@ export function setupApplicationMenu() {
 
 export function createMainWindow(options: WindowManagerOptions) {
   windowManagerOptions = options
+  configureMiraBrowserSession(session.fromPartition(HOSTED_BROWSER_PARTITION))
+  configureMiraBrowserSession(session.fromPartition(WORKBENCH_BROWSER_PARTITION))
   const isMac = process.platform === 'darwin'
   const isWindows = process.platform === 'win32'
   const saved = options.getStartupWindowBehavior?.() === 'restore' ? options.getMainWindowState?.() : undefined
@@ -153,7 +184,7 @@ export function createMainWindow(options: WindowManagerOptions) {
     return { action: 'deny' }
   })
   window.webContents.on('will-attach-webview', (event, preferences, params) => {
-    if (params.partition !== HOSTED_BROWSER_PARTITION || !isAllowedHostedBrowserUrl(params.src)) {
+    if (!isMiraBrowserPartition(params.partition) || !isAllowedHostedBrowserUrl(params.src)) {
       event.preventDefault()
       return
     }
@@ -164,7 +195,8 @@ export function createMainWindow(options: WindowManagerOptions) {
     preferences.webSecurity = true
   })
   window.webContents.on('did-attach-webview', (_event, guest) => {
-    guest.setWindowOpenHandler(() => ({ action: 'deny' }))
+    if (guest.session === session.fromPartition(WORKBENCH_BROWSER_PARTITION)) configureWorkbenchGuest(guest)
+    else guest.setWindowOpenHandler(() => ({ action: 'deny' }))
     guest.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     guest.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     guest.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))

@@ -134,10 +134,28 @@ function relayShortcut(event: MessageEvent) {
   }))
 }
 
+function relayWorkbenchBrowserEvent(event: MessageEvent) {
+  if (event.source !== window || !iframe.value?.contentWindow) return
+  const message = event.data as { type?: unknown; url?: unknown } | undefined
+  if (message?.type !== 'mira:workbench-open-tab' || typeof message.url !== 'string') return
+  try {
+    const url = new URL(message.url)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return
+    iframe.value.contentWindow.postMessage({ type: message.type, url: url.href }, '*')
+  } catch { /* The host only forwards validated browser URLs. */ }
+}
+
 watch([() => props.url, () => props.policy], startLoading, { immediate: true, deep: true })
 watch(() => themeStore.themeMode, syncTheme)
-onMounted(() => window.addEventListener('message', relayShortcut))
-onBeforeUnmount(() => { clearTimer(); window.removeEventListener('message', relayShortcut) })
+onMounted(() => {
+  window.addEventListener('message', relayShortcut)
+  window.addEventListener('message', relayWorkbenchBrowserEvent)
+})
+onBeforeUnmount(() => {
+  clearTimer()
+  window.removeEventListener('message', relayShortcut)
+  window.removeEventListener('message', relayWorkbenchBrowserEvent)
+})
 </script>
 
 <style scoped lang="scss">
