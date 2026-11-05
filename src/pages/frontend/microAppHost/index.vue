@@ -1,6 +1,6 @@
 <template>
   <div class="micro-app-root">
-    <AppLoadingOverlay class="micro-app-loading" :active="loading" text="正在加载微应用…">
+    <AppLoadingOverlay class="micro-app-loading" :active="loading" text="应用切换中">
       <el-result v-if="error" icon="error" title="微应用无法加载" :sub-title="error">
         <template #extra>
           <el-button v-if="entryUrl" type="primary" @click="openInNewWindow">在新窗口打开</el-button>
