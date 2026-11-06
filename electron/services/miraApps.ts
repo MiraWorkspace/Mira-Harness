@@ -1,16 +1,20 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { createHash } from 'node:crypto'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
 import { unzipSync } from 'fflate'
-import { DEFAULT_APPS_CATALOG_URL, appCompatibilityError, appRelativePath, compatibleAppRelease, parseAppsCatalog, parseLocalAppManifest, validateCatalogUrl, type AppsCatalog, type AppsState, type InstalledApp, type LocalAppManifest } from '../../src/config/miraApps'
+import { DEFAULT_APPS_CATALOG_URL, appCompatibilityError, appRelativePath, compareAppVersions, compatibleAppRelease, parseAppsCatalog, parseLocalAppManifest, usesPlatformRuntime, validateCatalogUrl, type AppsCatalog, type AppsState, type InstalledApp, type LocalAppManifest } from '../../src/config/miraApps'
 import type { MicroApp, PlatformSnapshot } from '../../src/types'
 import type { MiraPaths } from '../storage/miraPaths'
 import type { LocalMicroAppServer } from '../adapters/localMicroAppServer'
+import { appPackageIdentity } from '../security/appPackageIdentity'
+import { parseInstalledAppCapabilities } from '../../src/config/appCapabilities'
+import type { InstalledPlatformApp } from './appRuntime'
 
 interface AppDatabase { getSnapshot(): PlatformSnapshot; savePreference(key: string, value: unknown): unknown }
 const ENABLED_KEY = 'localAppsEnabled'
 const BLOCKED_KEY = 'blockedApps'
 const URL_KEY = 'appsCatalogUrl'
+const UPDATES_KEY = 'pendingAppUpdates'
 const MAX_CATALOG_BYTES = 1024 * 1024
 function inside(root: string, path: string) { const suffix = relative(root, path); return !isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) }
 function packageFile(root: string, path: string) {
@@ -18,6 +22,34 @@ function packageFile(root: string, path: string) {
   const file = realpathSync(resolve(root, path))
   if (!inside(root, file) || !statSync(file).isFile()) throw new Error('包内文件不存在或超出应用目录')
   return file
+}
+
+function unpackPackage(bytes: Uint8Array) {
+  if (!bytes.length || bytes.length > 64 * 1024 * 1024) throw new Error('应用安装包不能超过 64 MB')
+  let expanded = 0, count = 0
+  const names = new Set<string>()
+  return unzipSync(bytes, { filter: file => {
+    const path = file.name.endsWith('/') ? file.name.slice(0, -1) : file.name
+    appRelativePath(path)
+    if (path.split('/').some(part => /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new Error('安装包包含不兼容的文件名')
+    const key = path.toLowerCase()
+    if (names.has(key)) throw new Error('安装包包含重复路径')
+    names.add(key)
+    expanded += file.originalSize
+    if (++count > 10000 || expanded > 256 * 1024 * 1024) throw new Error('安装包解压后过大')
+    return !file.name.endsWith('/')
+  } })
+}
+
+export function inspectMiniappPackage(bytes: Uint8Array) {
+  const files = unpackPackage(bytes), content = files['app-manifest.json']
+  if (!content || content.length > 65536) throw new Error('应用清单不存在或超过 64 KB')
+  const manifest = parseLocalAppManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(content)))
+  if (manifest.test) throw new Error('测试应用不能通过安装包安装')
+  parseInstalledAppCapabilities(manifest.id, manifest.requiredCapabilities)
+  if (['mira-workbench', 'mira-workbench-test', 'mira-harness'].includes(manifest.id) || !usesPlatformRuntime(manifest)) throw new Error('请选择第三方小程序安装包')
+  if (!files[manifest.entry] || (manifest.icon && !files[manifest.icon])) throw new Error('包内文件不存在或超出应用目录')
+  return manifest
 }
 
 export class MiraApps {
@@ -31,8 +63,11 @@ export class MiraApps {
   private refreshing?: Promise<AppsState>
   private installing = false
   private pendingRestart = new Map<string, 'install' | 'uninstall'>()
+  private readonly pendingUpdates = new Set<string>()
   private watcher?: FSWatcher
   private scanTimer?: ReturnType<typeof setTimeout>
+  private startupUpdatesApplied = false
+  private invalidateApp?: (id: string, reason: 'disabled' | 'changed' | 'removed') => void
 
   constructor(private readonly paths: MiraPaths, private readonly database: AppDatabase, private readonly server: LocalMicroAppServer, private readonly shellVersion: string, private readonly fetcher: typeof fetch) {
     const cache = join(paths.config, 'apps-catalog-cache.json')
@@ -52,7 +87,7 @@ export class MiraApps {
     this.stopWatching()
     mkdirSync(this.paths.apps, { recursive: true })
     let previous = JSON.stringify(this.installed)
-    this.watcher = watch(this.paths.apps, { persistent: false }, () => {
+    const scheduleScan = () => {
       clearTimeout(this.scanTimer)
       this.scanTimer = setTimeout(() => {
         this.scanTimer = undefined
@@ -61,8 +96,10 @@ export class MiraApps {
         if (current !== previous) { previous = current; onChange(state) }
       }, 150)
       this.scanTimer.unref()
-    })
+    }
+    this.watcher = watch(this.paths.apps, { persistent: false }, scheduleScan)
     this.watcher.on('error', () => this.stopWatching())
+    scheduleScan()
   }
 
   stopWatching() {
@@ -72,16 +109,58 @@ export class MiraApps {
     this.watcher = undefined
   }
 
+  onAppInvalidated(listener: (id: string, reason: 'disabled' | 'changed' | 'removed') => void) { this.invalidateApp = listener }
+
+  resolvePlatformApp(id: string): InstalledPlatformApp | undefined {
+    const item = this.installed.find(app => app.id === id)
+    const manifest = this.manifests.get(id)
+    if (!item || !manifest || item.error || !item.enabled || (this.pendingRestart.has(id) && !this.pendingUpdates.has(id))) return undefined
+    try {
+      const current = parseLocalAppManifest(JSON.parse(readFileSync(packageFile(item.directory, 'app-manifest.json'), 'utf8')))
+      if (JSON.stringify(current) !== JSON.stringify(manifest)) return undefined
+      return { id, enabled: true, firstParty: !item.miniapp, installationId: appPackageIdentity(item.directory), requiredCapabilities: parseInstalledAppCapabilities(id, current.requiredCapabilities) }
+    } catch { return undefined }
+  }
+
+  resolvePlatformEntry(id: string) {
+    const app = this.resolvePlatformApp(id), manifest = this.manifests.get(id)
+    if (!app || !manifest) throw new Error('应用未安装或已停用')
+    return { ...app, url: new URL(manifest.entry, this.server.getEntryUrl(`micro-${id}`)).href }
+  }
+
+  platformIcon(id: string): string | undefined {
+    const item = this.installed.find(app => app.id === id), manifest = this.manifests.get(id)
+    if (!item || !manifest?.icon || !this.resolvePlatformApp(id)) return undefined
+    const mime: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.ico': 'image/x-icon' }
+    const type = mime[extname(manifest.icon).toLowerCase()]
+    if (!type) return undefined
+    try {
+      const file = packageFile(item.directory, manifest.icon), size = statSync(file).size
+      if (size < 1 || size > 1024 * 1024) return undefined
+      const content = readFileSync(file)
+      if (content.length !== size) return undefined
+      return `data:${type};base64,${content.toString('base64')}`
+    } catch { return undefined }
+  }
+
   scan() {
     mkdirSync(this.paths.apps, { recursive: true })
-    const root = realpathSync(this.paths.apps)
+    const roots = [this.paths.apps, join(this.paths.apps, '.miniapps')].filter(path => {
+      const info = lstatSync(path, { throwIfNoEntry: false })
+      if (!info) return false
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('应用目录无效')
+      return true
+    }).map(path => realpathSync(path))
+    if (!this.startupUpdatesApplied) { this.startupUpdatesApplied = true; for (const root of roots) this.applyPendingUpdates(root) }
     const installed: InstalledApp[] = []
+    const previous = this.installed.map(item => ({ id: item.id, directory: item.directory, enabled: item.enabled, manifest: JSON.stringify(this.manifests.get(item.id)) }))
     this.manifests.clear()
     const reserved = new Set(['main', ...this.database.getSnapshot().microApps.map(app => app.code)])
-    for (const dir of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const root of roots) for (const dir of readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (dir.name.startsWith('.') || (!dir.isDirectory() && !dir.isSymbolicLink())) continue
       const directory = join(root, dir.name)
-      const item: InstalledApp = { id: dir.name, name: dir.name, directory, enabled: false, test: false }
+      const miniapp = root !== roots[0]
+      const item: InstalledApp = { id: dir.name, name: dir.name, directory, enabled: false, test: false, miniapp }
       try {
         if (dir.isSymbolicLink()) throw new Error('应用目录不能是符号链接')
         const file = packageFile(directory, 'app-manifest.json')
@@ -90,34 +169,43 @@ export class MiraApps {
         Object.assign(item, { name: manifest.name, version: manifest.version, description: manifest.description, test: manifest.test })
         if (manifest.id !== dir.name) throw new Error('应用 ID 必须与目录名一致')
         if (reserved.has(manifest.id)) throw new Error('应用 ID 与已登记应用冲突，请使用独立测试 ID')
+        if (installed.some(app => app.id === manifest.id)) throw new Error('应用 ID 与已安装应用冲突')
+        if (miniapp && (['mira-workbench', 'mira-workbench-test', 'mira-harness'].includes(manifest.id) || !usesPlatformRuntime(manifest))) throw new Error('小程序清单无效')
         packageFile(directory, manifest.entry)
         if (manifest.icon) packageFile(directory, manifest.icon)
         const error = appCompatibilityError(manifest, this.shellVersion)
         if (error) throw new Error(error)
-        if (manifest.requiredCapabilities.length) throw new Error('此本地加载通道暂不支持宿主能力授权')
+        parseInstalledAppCapabilities(manifest.id, manifest.requiredCapabilities)
         this.manifests.set(item.id, manifest)
       } catch (error) { item.error = error instanceof Error ? error.message : '应用清单读取失败' }
       installed.push(item)
     }
     this.installed = installed
+    for (const item of installed) if (!this.pendingUpdates.has(item.id) && lstatSync(join(item.directory, '..', `.update-${item.id}`), { throwIfNoEntry: false })) item.updateError = '上次更新未能完成，请重新尝试更新。'
     this.syncResources()
+    for (const item of previous) {
+      const current = this.installed.find(app => app.id === item.id)
+      if (!current) this.invalidateApp?.(item.id, 'removed')
+      else if (item.directory !== current.directory || item.manifest !== JSON.stringify(this.manifests.get(item.id))) this.invalidateApp?.(item.id, 'changed')
+      else if (item.enabled && !current.enabled) this.invalidateApp?.(item.id, 'disabled')
+    }
     return this.state()
   }
 
-  snapshot(): PlatformSnapshot {
+  snapshot(includeMiniapps = false): PlatformSnapshot {
     const snapshot = this.database.getSnapshot()
     const enabled = snapshot.preferences[ENABLED_KEY] as Record<string, boolean> | undefined
-    const local: MicroApp[] = this.installed.filter(item => !item.error && this.pendingRestart.get(item.id) !== 'install').map((item, index) => {
+    const local: MicroApp[] = this.installed.filter(item => (includeMiniapps || !item.miniapp) && !item.error && (this.pendingRestart.get(item.id) !== 'install' || this.pendingUpdates.has(item.id))).map((item, index) => {
       const manifest = this.manifests.get(item.id)!
       return { id: `micro-${item.id}`, code: item.id, name: item.name, description: item.description, version: item.version, test: item.test, localApp: true,
-        icon: 'lucide:app-window', iconUrl: item.iconUrl, entry: { type: 'local-directory', directory: item.directory }, entryPath: manifest.entry,
+        icon: 'lucide:app-window', iconUrl: item.iconUrl, entry: { type: 'local-directory', directory: item.directory }, entryPath: manifest.entry, platformApp: usesPlatformRuntime(manifest),
         sort: 100 + index, enabled: enabled?.[item.id] !== false, integrationMode: 'iframe', runtimeConfig: { kind: 'iframe', iframe: { profile: 'compatible' } } }
     })
     return { ...snapshot, microApps: [...snapshot.microApps, ...local] }
   }
 
   private syncResources() {
-    const snapshot = this.snapshot()
+    const snapshot = this.snapshot(true)
     this.server.setApps(snapshot.microApps)
     for (const item of this.installed) {
       const app = snapshot.microApps.find(app => app.localApp && app.code === item.id)
@@ -137,13 +225,16 @@ export class MiraApps {
     const matching = this.cachedUrl === url
     const storedBlocked = snapshot.preferences[BLOCKED_KEY]
     const blocked = Array.isArray(storedBlocked) ? [...new Set(storedBlocked.filter((id): id is string => typeof id === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(id)))].sort() : []
-    return { directory: this.paths.apps, installed: this.installed.map(item => ({ ...item })), blocked, pendingRestart: [...this.pendingRestart].map(([id, action]) => ({ id, action })), catalog: matching ? this.catalog : undefined, catalogUrl: url, checkedAt: matching ? this.checkedAt : undefined, cached: matching && this.cached, catalogError: this.catalogError, snapshot }
+    return { directory: this.paths.apps, installed: this.installed.filter(item => !item.miniapp).map(item => ({ ...item })), blocked, pendingRestart: [...this.pendingRestart].map(([id, action]) => ({ id, action })), catalog: matching ? this.catalog : undefined, catalogUrl: url, checkedAt: matching ? this.checkedAt : undefined, cached: matching && this.cached, catalogError: this.catalogError, snapshot }
   }
+
+  miniapps() { return this.installed.filter(item => item.miniapp && !item.error && (this.pendingRestart.get(item.id) !== 'install' || this.pendingUpdates.has(item.id))).map(item => ({ ...item })) }
 
   setEnabled(id: string, enabled: boolean) {
     if (typeof enabled !== 'boolean' || !this.manifests.has(id)) throw new Error('未找到有效的本地应用')
     const previous = this.database.getSnapshot().preferences[ENABLED_KEY] as Record<string, boolean> | undefined
     this.database.savePreference(ENABLED_KEY, { ...previous, [id]: enabled })
+    if (!enabled) this.invalidateApp?.(id, 'disabled')
     this.syncResources()
     return this.state()
   }
@@ -159,22 +250,108 @@ export class MiraApps {
     return this.state()
   }
 
-  private applicationDirectory(id: string) {
+  private applicationDirectory(id: string, miniapp = this.installed.some(item => item.id === id && item.miniapp && !item.error)) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(id)) throw new Error('应用 ID 无效')
     if (id === 'main' || this.database.getSnapshot().microApps.some(app => app.code === id)) throw new Error('不能安装或卸载内置应用')
-    return join(realpathSync(this.paths.apps), id)
+    const root = miniapp ? join(this.paths.apps, '.miniapps') : this.paths.apps
+    if (miniapp) mkdirSync(root, { recursive: true })
+    if (lstatSync(root).isSymbolicLink()) throw new Error('应用目录无效')
+    return join(realpathSync(root), id)
+  }
+
+  private validUpdatePackage(directory: string, id: string) {
+    const info = lstatSync(directory)
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('应用目录无效')
+    const file = packageFile(directory, 'app-manifest.json')
+    if (statSync(file).size > 65536) throw new Error('应用清单过大')
+    const manifest = parseLocalAppManifest(JSON.parse(readFileSync(file, 'utf8')))
+    if (manifest.id !== id || manifest.test || appCompatibilityError(manifest, this.shellVersion)) throw new Error('应用清单无效')
+    parseInstalledAppCapabilities(id, manifest.requiredCapabilities)
+    packageFile(directory, manifest.entry)
+    if (manifest.icon) packageFile(directory, manifest.icon)
+    appPackageIdentity(directory)
+    return manifest
+  }
+
+  private applyPendingUpdates(root: string) {
+    const miniapp = root !== realpathSync(this.paths.apps)
+    for (const name of readdirSync(root).filter(item => /^\.backup-[a-z][a-z0-9-]{0,63}$/.test(item))) {
+      try {
+        const id = name.slice(8), backup = join(root, name), target = this.applicationDirectory(id, miniapp)
+        this.validUpdatePackage(backup, id)
+        const updates = this.database.getSnapshot().preferences[UPDATES_KEY] as Record<string, { previous: string; next: string }> | undefined
+        const expected = updates?.[id]
+        if (expected && appPackageIdentity(backup) !== expected.previous) continue
+        if (!lstatSync(target, { throwIfNoEntry: false })) renameSync(backup, target)
+        else {
+          try {
+            this.validUpdatePackage(target, id)
+            if (!expected) continue
+            if (appPackageIdentity(target) !== expected.next) throw new Error('应用更新内容已变化')
+          }
+          catch {
+            const failed = join(root, `.failed-${id}`)
+            if (lstatSync(failed, { throwIfNoEntry: false })) continue
+            renameSync(target, failed)
+            try { renameSync(backup, target) } catch (error) { renameSync(failed, target); throw error }
+            continue
+          }
+          rmSync(backup, { recursive: true, force: true })
+          const remaining = { ...updates }; delete remaining[id]; this.database.savePreference(UPDATES_KEY, remaining)
+        }
+      } catch { /* An invalid backup must not prevent other applications from loading. */ }
+    }
+    for (const name of readdirSync(root).filter(item => /^\.update-[a-z][a-z0-9-]{0,63}$/.test(item))) {
+      try {
+        const id = name.slice(8), update = join(root, name), target = this.applicationDirectory(id, miniapp), backup = join(root, `.backup-${id}`)
+        const updates = this.database.getSnapshot().preferences[UPDATES_KEY] as Record<string, { previous: string; next: string }> | undefined
+        const expected = updates?.[id]
+        if (!expected || !/^[a-f0-9]{64}$/.test(expected.previous) || !/^[a-f0-9]{64}$/.test(expected.next)) continue
+        if (lstatSync(update).isSymbolicLink() || !lstatSync(update).isDirectory() || !lstatSync(target).isDirectory() || lstatSync(target).isSymbolicLink()) continue
+        const old = this.validUpdatePackage(target, id), next = this.validUpdatePackage(update, id)
+        if (appPackageIdentity(target) !== expected.previous || appPackageIdentity(update) !== expected.next) continue
+        if (compareAppVersions(next.version, old.version) <= 0) continue
+        renameSync(target, backup)
+        try { renameSync(update, target) } catch (error) { renameSync(backup, target); throw error }
+        rmSync(backup, { recursive: true, force: true })
+        const remaining = { ...updates }; delete remaining[id]; this.database.savePreference(UPDATES_KEY, remaining)
+      } catch { /* Keep pending files for recovery or a later retry. */ }
+    }
+  }
+
+  private stagePackage(temporary: string, manifest: LocalAppManifest, miniapp = false) {
+    const destination = this.applicationDirectory(manifest.id, miniapp)
+    const existing = this.installed.find(item => item.id === manifest.id)
+    const updating = Boolean(lstatSync(destination, { throwIfNoEntry: false }))
+    if (updating) {
+      if (!existing || existing.error || existing.test || !existing.version || compareAppVersions(manifest.version, existing.version) <= 0) throw new Error('应用目录已存在，更新版本必须高于已安装版本')
+      const pending = join(destination, '..', `.update-${manifest.id}`)
+      const stale = lstatSync(pending, { throwIfNoEntry: false }) ? join(realpathSync(this.paths.apps), `.rejected-${manifest.id}-${randomUUID()}`) : undefined
+      const previous = this.database.getSnapshot().preferences[UPDATES_KEY] as Record<string, { previous: string; next: string }> | undefined
+      const next = { ...previous, [manifest.id]: { previous: appPackageIdentity(destination), next: appPackageIdentity(temporary) } }
+      if (stale) renameSync(pending, stale)
+      try { this.database.savePreference(UPDATES_KEY, next); renameSync(temporary, pending) }
+      catch (error) { if (stale) renameSync(stale, pending); this.database.savePreference(UPDATES_KEY, previous ?? {}); throw error }
+      this.pendingUpdates.add(manifest.id)
+    } else renameSync(temporary, destination)
+    this.pendingRestart.set(manifest.id, 'install')
+    this.scan()
+    return updating ? this.state() : this.setEnabled(manifest.id, true)
   }
 
   async install(id: string): Promise<AppsState> {
     if (this.installing) throw new Error('正在安装应用，请稍后重试')
     if (this.pendingRestart.has(id)) throw new Error('请先重启 Mira 以完成应用更改')
     this.scan()
-    const destination = this.applicationDirectory(id)
-    if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error('应用目录已存在，请先卸载后重新安装')
+    const destination = this.applicationDirectory(id, false)
+    const existing = this.installed.find(item => item.id === id)
+    if (existing?.miniapp) throw new Error('应用 ID 与第三方小程序冲突')
+    if (lstatSync(destination, { throwIfNoEntry: false }) && (!existing || existing.error || existing.test || !existing.version)) throw new Error('应用目录已存在，不能更新')
     const catalog = this.state().catalog
     const application = catalog?.apps.find(app => app.id === id)
     const release = application && !catalog?.example ? compatibleAppRelease(application, this.shellVersion) : undefined
     if (!release) throw new Error('没有可安装的兼容版本，请先检查应用目录')
+    if (lstatSync(destination, { throwIfNoEntry: false }) && (!existing || existing.error || existing.test || !existing.version || compareAppVersions(release.version, existing.version) <= 0)) throw new Error('应用目录已存在，更新版本必须高于已安装版本')
     const pkg = release.package
     if (!pkg.sizeBytes || pkg.sizeBytes > 64 * 1024 * 1024) throw new Error('应用安装包不能超过 64 MB')
     this.installing = true
@@ -200,19 +377,7 @@ export class MiraApps {
       const bytes = Buffer.concat(chunks)
       if (length !== pkg.sizeBytes) throw new Error('安装包大小与目录不一致')
       if (createHash('sha256').update(bytes).digest('hex') !== pkg.sha256.toLowerCase()) throw new Error('安装包 SHA-256 校验失败')
-      let expanded = 0, count = 0
-      const names = new Set<string>()
-      const files = unzipSync(bytes, { filter: file => {
-        const path = file.name.endsWith('/') ? file.name.slice(0, -1) : file.name
-        appRelativePath(path)
-        if (path.split('/').some(part => /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw new Error('安装包包含不兼容的文件名')
-        const key = path.toLowerCase()
-        if (names.has(key)) throw new Error('安装包包含重复路径')
-        names.add(key)
-        expanded += file.originalSize
-        if (++count > 10000 || expanded > 256 * 1024 * 1024) throw new Error('安装包解压后过大')
-        return !file.name.endsWith('/')
-      } })
+      const files = unpackPackage(bytes)
       temporary = mkdtempSync(join(realpathSync(this.paths.apps), '.install-'))
       for (const [path, content] of Object.entries(files)) {
         const target = join(temporary, path)
@@ -225,20 +390,49 @@ export class MiraApps {
       if (manifest.id !== id || manifest.version !== release.version || manifest.test) throw new Error('安装包清单与发布目录不一致')
       const error = appCompatibilityError(manifest, this.shellVersion)
       if (error) throw new Error(error)
-      if (manifest.requiredCapabilities.length) throw new Error('此安装通道暂不支持宿主能力授权')
+      parseInstalledAppCapabilities(manifest.id, manifest.requiredCapabilities)
       packageFile(temporary, manifest.entry)
       if (manifest.icon) packageFile(temporary, manifest.icon)
-      if (lstatSync(destination, { throwIfNoEntry: false })) throw new Error('应用目录已存在，请先卸载后重新安装')
-      renameSync(temporary, destination)
+      const state = this.stagePackage(temporary, manifest)
       temporary = undefined
-      this.pendingRestart.set(id, 'install')
-      this.scan()
-      return this.setEnabled(id, true)
+      return state
     } catch (error) {
       if (controller.signal.aborted) throw new Error('安装包下载超时，请重试')
       throw error
     } finally {
       clearTimeout(timeout)
+      this.installing = false
+      if (temporary) rmSync(temporary, { recursive: true, force: true })
+    }
+  }
+
+  installMiniapp(bytes: Uint8Array): AppsState {
+    if (this.installing) throw new Error('正在安装应用，请稍后重试')
+    this.scan()
+    this.installing = true
+    let temporary: string | undefined
+    try {
+      const manifest = inspectMiniappPackage(bytes)
+      if (this.installed.some(item => item.id === manifest.id && !item.miniapp)) throw new Error('小程序不能替换第一方子应用')
+      const files = unpackPackage(bytes)
+      temporary = mkdtempSync(join(this.applicationDirectory(manifest.id, true), '..', '.install-'))
+      for (const [path, content] of Object.entries(files)) {
+        const target = join(temporary, path)
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, content, { flag: 'wx' })
+      }
+      const file = packageFile(temporary, 'app-manifest.json')
+      if (statSync(file).size > 65536) throw new Error('应用清单不能超过 64 KB')
+      const error = appCompatibilityError(manifest, this.shellVersion)
+      if (error) throw new Error(error)
+      parseInstalledAppCapabilities(manifest.id, manifest.requiredCapabilities)
+      packageFile(temporary, manifest.entry)
+      if (manifest.icon) packageFile(temporary, manifest.icon)
+      if (this.pendingRestart.has(manifest.id)) throw new Error('请先重启 Mira 以完成应用更改')
+      const state = this.stagePackage(temporary, manifest, true)
+      temporary = undefined
+      return state
+    } finally {
       this.installing = false
       if (temporary) rmSync(temporary, { recursive: true, force: true })
     }
@@ -250,6 +444,7 @@ export class MiraApps {
     this.scan()
     const directory = this.applicationDirectory(id)
     if (!this.installed.some(app => app.id === id)) throw new Error('未找到已安装的应用')
+    this.invalidateApp?.(id, 'removed')
     const stat = lstatSync(directory)
     if (stat.isSymbolicLink()) unlinkSync(directory)
     else rmSync(directory, { recursive: true, force: true })

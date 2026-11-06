@@ -14,6 +14,23 @@ afterEach(() => {
 })
 
 describe('first-release platform initialization', () => {
+  it('keeps application approvals outside exported and imported preferences', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'mira-app-approval-')); directories.push(directory)
+    const database = new PlatformDatabase(directory)
+    try {
+      const approval = { installationId: 'a'.repeat(64), capabilities: ['storage:app'] }
+      database.appPermissions.set('sample', approval)
+      expect(database.exportSnapshot()).not.toContain('storage:app')
+      const snapshot = JSON.parse(database.exportSnapshot())
+      snapshot.preferences['appPlatform.permissions.v1'] = { sample: { installationId: 'b'.repeat(64), capabilities: ['models:generate'] } }
+      database.importSnapshot(JSON.stringify(snapshot))
+      expect(database.appPermissions.get('sample')).toEqual(approval)
+      database.close()
+      const reopened = new PlatformDatabase(directory)
+      expect(reopened.appPermissions.get('sample')).toEqual(approval)
+      reopened.close()
+    } finally { if (database.database.open) database.close() }
+  })
   it('filters retired novel menus on reopening and import without losing other menus or saved data', () => {
     const directory = mkdtempSync(join(tmpdir(), 'mira-retired-novel-'))
     directories.push(directory)

@@ -21,6 +21,7 @@
           :navigate="navigateFirstParty"
           @error="message => error = message"
         />
+        <PlatformAppView v-else-if="app.platformApp && platformApi" :key="app.code" :app-id="app.code" :api="platformApi" />
         <WujieVue
           v-else-if="app.integrationMode === 'wujie' && runtime"
           :key="app.code"
@@ -63,6 +64,7 @@ import type { MicroApp, PlatformContext, PlatformNavigatePayload, WujieRuntimeCo
 import EmbeddedWebFrame from '../components/EmbeddedWebFrame.vue'
 import AppLoadingOverlay from '@/components/AppLoadingOverlay.vue'
 import FirstPartyFrame from './FirstPartyFrame.vue'
+import PlatformAppView from './PlatformAppView.vue'
 
 const route = useRoute()
 const router = useRouter()

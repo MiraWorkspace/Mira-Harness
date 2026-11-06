@@ -91,6 +91,7 @@ export interface MicroApp {
   version?: string
   test?: boolean
   localApp?: boolean
+  platformApp?: boolean
   entryPath?: string
   sort: number
   enabled: boolean
@@ -116,6 +117,14 @@ export interface PlatformSnapshot {
 }
 
 export interface PlatformApi {
+  clearAppData(appId: string): Promise<boolean>
+  appView: {
+    setShellOverlay(id: number, open: boolean): Promise<void>
+    open(appId: string): Promise<number>
+    setBounds(id: number, bounds: { x: number; y: number; width: number; height: number }): Promise<void>
+    close(id: number): Promise<void>
+    onFailed(listener: (event: { id: number; message: string }) => void): () => void
+  }
   apps: {
     onChanged(listener: (state: import('@/config/miraApps').AppsState) => void): () => void
     scan(): Promise<import('@/config/miraApps').AppsState>
@@ -178,6 +187,7 @@ export interface PlatformApi {
   isFullScreen?(): boolean
   onFullScreenChanged?(listener: (fullScreen: boolean) => void): () => void
   onWindowNavigate(listener: (path: string) => void): () => void
+  onWindowShortcut?(listener: (input: { key: string; code: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) => void): () => void
   onWindowCloseContext?(listener: () => void): () => void
   listModelProviders(): Promise<import('@/config/harness').ModelProviderSummary[]>
   listModelServices(): Promise<import('@/config/harness').ModelServiceSummary[]>

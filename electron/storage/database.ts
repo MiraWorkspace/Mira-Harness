@@ -20,6 +20,7 @@ import { MiraHookStore } from './miraHookStore'
 import { MiraAgentModelStore } from './miraAgentModelStore'
 import { MiraPromptHistoryStore } from './miraPromptHistory'
 import { AutomationStore } from './automationStore'
+import { AppPermissionStore } from './appPermissionStore'
 import { MiraPaths } from './miraPaths'
 import { validateSnapshot } from '../../src/config/platformValidation'
 import { DEFAULT_ASSISTANT_TONE, type HarnessHistoryPage, type HarnessHistoryQuery, type HarnessUsageStats } from '../../src/config/harness'
@@ -59,6 +60,7 @@ export class PlatformDatabase {
   readonly agentModels: MiraAgentModelStore
   readonly promptHistory: MiraPromptHistoryStore
   readonly automations: AutomationStore
+  readonly appPermissions: AppPermissionStore
   private readonly deletedHarnessDraftOwners = new Set<string>()
 
   constructor(paths: MiraPaths | string) {
@@ -83,6 +85,7 @@ export class PlatformDatabase {
     this.agentModels = new MiraAgentModelStore(this.database, this.models, this.plugins)
     this.promptHistory = new MiraPromptHistoryStore(this.database)
     this.automations = new AutomationStore(this.database)
+    this.appPermissions = new AppPermissionStore(this.database)
     this.database.pragma('journal_mode = WAL')
     this.initialize()
     this.goals.initialize()

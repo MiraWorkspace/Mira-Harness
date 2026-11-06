@@ -85,6 +85,85 @@ function register(options: Partial<PlatformIpcDependencies> = {}) {
 }
 
 describe('platform IPC registration', () => {
+  it('does not expose first-party permission review to the shell', () => {
+    register()
+    expect(electron.handlers.has('platform:app-permissions')).toBe(false)
+  })
+  it('clears application data only after confirmation from the unchanged host and package', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mira-clear-app-'))
+    try {
+      await writeFile(join(directory, 'index.html'), 'original')
+      const apps = { state: () => ({ installed: [{ id: 'sample', name: 'Sample', directory }] }) }
+      const appViews = { closeApp: vi.fn() }, appRuntime = { clearAppData: vi.fn() }
+      const { sender } = register({ apps: apps as never, appViews: appViews as never, appRuntime: appRuntime as never })
+      const frame = { parent: null }, owner = { webContents: sender, isDestroyed: () => false }
+      Object.assign(sender, { mainFrame: frame })
+      electron.fromWebContents.mockReturnValue(owner as never)
+      const invoke = () => electron.handlers.get('platform:clear-app-data')!({ sender, senderFrame: frame }, 'sample') as Promise<boolean>
+      electron.showMessageBox.mockResolvedValueOnce({ response: 0 })
+      await expect(invoke()).resolves.toBe(false)
+      expect(appRuntime.clearAppData).not.toHaveBeenCalled()
+      let finish!: (value: { response: number }) => void
+      electron.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const pending = invoke()
+      await writeFile(join(directory, 'index.html'), 'changed')
+      finish({ response: 1 })
+      await expect(pending).rejects.toThrow('变化')
+      expect(appRuntime.clearAppData).not.toHaveBeenCalled()
+      electron.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const navigating = invoke()
+      sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+      finish({ response: 1 })
+      await expect(navigating).rejects.toThrow('变化')
+      expect(appRuntime.clearAppData).not.toHaveBeenCalled()
+      electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+      await expect(invoke()).resolves.toBe(true)
+      expect(appViews.closeApp).toHaveBeenCalledExactlyOnceWith('sample')
+      expect(appRuntime.clearAppData).toHaveBeenCalledExactlyOnceWith('sample')
+      expect(sender.listenerCount('did-start-navigation')).toBe(0)
+    } finally { electron.fromWebContents.mockReturnValue(null); await rm(directory, { recursive: true, force: true }) }
+  })
+  it('records an explicit Workbench clear before deleting its database', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mira-clear-workbench-'))
+    try {
+      await writeFile(join(directory, 'index.html'), 'app')
+      const apps = { state: () => ({ installed: [{ id: 'mira-workbench', name: 'Workbench', directory }] }) }
+      const views = { closeApp: vi.fn() }, runtime = { clearAppData: vi.fn() }
+      const { sender, database } = register({ apps: apps as never, appViews: views as never, appRuntime: runtime as never })
+      database.getSnapshot.mockReturnValue({ microApps: [], preferences: {} } as never)
+      const frame = { parent: null }, owner = { webContents: sender, isDestroyed: () => false }
+      Object.assign(sender, { mainFrame: frame }); electron.fromWebContents.mockReturnValue(owner as never)
+      electron.showMessageBox.mockResolvedValueOnce({ response: 1 })
+      await expect(electron.handlers.get('platform:clear-app-data')!({ sender, senderFrame: frame }, 'mira-workbench')).resolves.toBe(true)
+      expect(database.savePreference).toHaveBeenCalledWith('workbenchLegacyDataCleared', ['mira-workbench'])
+      expect(database.savePreference.mock.invocationCallOrder[0]).toBeLessThan(runtime.clearAppData.mock.invocationCallOrder[0])
+    } finally { electron.fromWebContents.mockReturnValue(null); await rm(directory, { recursive: true, force: true }) }
+  })
+  it('limits native application view control to the owning host frame', () => {
+    const appViews = { open: vi.fn(() => 42), setBounds: vi.fn(), close: vi.fn() }
+    const { invoke, invokeFromSubframe, sender } = register({ appViews: appViews as never })
+    const owner = { webContents: sender }
+    electron.fromWebContents.mockReturnValue(owner as never)
+    expect(invoke('platform:app-view', 'open', { appId: 'sample' })).toBe(42)
+    expect(appViews.open).toHaveBeenCalledWith(owner, 'sample')
+    const bounds = { x: 1, y: 2, width: 300, height: 200 }
+    invoke('platform:app-view', 'bounds', { id: 42, bounds })
+    expect(appViews.setBounds).toHaveBeenCalledWith(owner, 42, bounds)
+    invoke('platform:app-view', 'close', { id: 42 })
+    expect(appViews.close).toHaveBeenCalledWith(owner, 42)
+    expect(() => invokeFromSubframe('platform:app-view', 'open', { appId: 'sample' })).toThrow('宿主主页面')
+    electron.fromWebContents.mockReturnValue({ webContents: {} } as never)
+    expect(() => invoke('platform:app-view', 'open', { appId: 'sample' })).toThrow('宿主窗口')
+    electron.fromWebContents.mockReturnValue(null)
+  })
+  it('broadcasts appearance updates only after saving the theme preference', () => {
+    const changed = vi.fn(), { invoke, database } = register({ onThemePreferenceChanged: changed })
+    invoke('platform:save-preference', 'themeMode', 'dark')
+    expect(database.savePreference).toHaveBeenCalledWith('themeMode', 'dark')
+    expect(changed).toHaveBeenCalledOnce()
+    invoke('platform:save-preference', 'other', 'value')
+    expect(changed).toHaveBeenCalledOnce()
+  })
   it('keeps computer permission and cursor settings behind the desktop owner grant', async () => {
     const computerSettings = { status: vi.fn(async () => ({ platform: 'darwin' })), setCursor: vi.fn(), openPermission: vi.fn(async () => undefined) }
     const { invoke } = register({ computerSettings: computerSettings as never, harnessRuntime: {} as never })
@@ -387,6 +466,8 @@ describe('platform IPC registration', () => {
     const { invoke, database, localMicroAppServer, snapshot } = register()
     expect([...electron.handlers.keys()]).toEqual([
       'platform:get-snapshot',
+      'platform:app-view',
+      'platform:clear-app-data',
       'platform:apps',
       'platform:agent-models',
       'platform:user-agents',
@@ -424,7 +505,7 @@ describe('platform IPC registration', () => {
     const { invoke, invokeFromSubframe } = register({ apps: apps as never })
     expect(invoke('platform:get-snapshot')).toBe(snapshot)
     expect(invoke('platform:apps', 'scan')).toEqual({ snapshot })
-    for (const action of ['scan', 'setEnabled', 'refreshCatalog', 'openDirectory', 'install', 'uninstall', 'restart']) expect(() => invokeFromSubframe('platform:apps', action)).toThrow('宿主主页面')
+    for (const action of ['scan', 'setEnabled', 'refreshCatalog', 'openDirectory', 'install', 'installLocal', 'uninstall', 'restart']) expect(() => invokeFromSubframe('platform:apps', action)).toThrow('宿主主页面')
     invoke('platform:apps', 'setEnabled', { id: 'mira-workbench-test', enabled: false })
     expect(apps.setEnabled).toHaveBeenCalledWith('mira-workbench-test', false)
     invoke('platform:apps', 'refreshCatalog')
@@ -440,6 +521,15 @@ describe('platform IPC registration', () => {
     expect(electron.relaunch).toHaveBeenCalledOnce()
     expect(electron.quit).toHaveBeenCalledOnce()
     expect(() => invoke('platform:apps', 'unknown')).toThrow('未知的应用操作')
+  })
+
+  it('rejects the removed local-package install operation without opening a dialog', () => {
+    const apps = { installMiniapp: vi.fn() }
+    const { invoke } = register({ apps: apps as never })
+    const calls = electron.showOpenDialog.mock.calls.length
+    expect(() => invoke('platform:apps', 'installLocal')).toThrow('未知的应用操作')
+    expect(electron.showOpenDialog.mock.calls).toHaveLength(calls)
+    expect(apps.installMiniapp).not.toHaveBeenCalled()
   })
 
   it('routes first-party session lists through the live runtime snapshot rather than persisted database status', () => {

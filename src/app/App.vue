@@ -61,11 +61,15 @@ function openSettingsPage(path: string) {
 }
 
 let removeWindowNavigateListener: (() => void) | undefined
+let removeWindowShortcutListener: (() => void) | undefined
 let removeWindowCloseListener: (() => void) | undefined
 let removeNotificationListener: (() => void) | undefined
 
 onMounted(() => {
   document.addEventListener('keydown', handleGlobalKeydown)
+  removeWindowShortcutListener = window.platform?.onWindowShortcut?.(input => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { ...input, bubbles: true, cancelable: true }))
+  })
   removeWindowNavigateListener = window.platform?.onWindowNavigate(path => { void openSettingsPage(path) })
   removeWindowCloseListener = window.platform?.onWindowCloseContext?.(() => {
     const request = new Event('mira:close-active-context', { cancelable: true })
@@ -80,6 +84,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', handleGlobalKeydown)
+  removeWindowShortcutListener?.()
   removeWindowNavigateListener?.()
   removeWindowCloseListener?.()
   removeNotificationListener?.()

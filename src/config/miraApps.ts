@@ -11,6 +11,7 @@ export interface LocalAppManifest {
   description?: string
   icon?: string
   entry: string
+  runtime?: 'platform'
   test?: boolean
   minShellVersion: string
   platformApi: { major: number; minor: number }
@@ -26,7 +27,7 @@ export interface AppRelease {
 }
 export interface CatalogApp { id: string; name: string; description: string; repository: string; icon?: string; releases: AppRelease[] }
 export interface AppsCatalog { schemaVersion: 1; revision: number; publishedAt: string; example?: boolean; notice?: string; apps: CatalogApp[] }
-export interface InstalledApp { id: string; name: string; version?: string; description?: string; iconUrl?: string; test: boolean; enabled: boolean; directory: string; error?: string }
+export interface InstalledApp { miniapp?: boolean; id: string; name: string; version?: string; description?: string; iconUrl?: string; test: boolean; enabled: boolean; directory: string; error?: string; updateError?: string }
 export interface AppsState { directory: string; installed: InstalledApp[]; blocked?: string[]; pendingRestart: { id: string; action: 'install' | 'uninstall' }[]; catalog?: AppsCatalog; catalogUrl: string; checkedAt?: string; cached: boolean; catalogError?: string; snapshot: PlatformSnapshot }
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -65,7 +66,7 @@ function compatibility(value: unknown) {
 }
 export function appCompatibilityError(value: AppCompatibility, shellVersion: string): string | undefined {
   if (compareAppVersions(shellVersion, value.minShellVersion) < 0) return `需要 Mira ${value.minShellVersion} 或更新版本`
-  if (value.platformApi.major !== 1 || value.platformApi.minor > 0) return '当前 Mira 不支持此应用要求的平台 API'
+  if (value.platformApi.major !== 1 || value.platformApi.minor > 1) return '当前 Mira 不支持此应用要求的平台 API'
 }
 export function parseLocalAppManifest(value: unknown): LocalAppManifest {
   const item = record(value)
@@ -76,9 +77,12 @@ export function parseLocalAppManifest(value: unknown): LocalAppManifest {
   if (item.description !== undefined) string(item.description, '应用描述', 1000)
   if (item.test !== undefined && typeof item.test !== 'boolean') throw new Error('test 必须是布尔值')
   compatibility(item)
+  if (item.runtime !== undefined && item.runtime !== 'platform') throw new Error('应用运行时无效')
+  if (item.runtime === 'platform' && (item.platformApi.major !== 1 || item.platformApi.minor < 1)) throw new Error('平台运行时需要 API 1.1 或更新版本')
   if (!Array.isArray(item.requiredCapabilities) || item.requiredCapabilities.some((cap: unknown) => typeof cap !== 'string')) throw new Error('requiredCapabilities 必须是字符串数组')
-  return { manifestVersion: 1, id: item.id, name: item.name, version: item.version, description: item.description, icon: item.icon, entry: item.entry, test: item.test ?? false, minShellVersion: item.minShellVersion, platformApi: { major: item.platformApi.major, minor: item.platformApi.minor }, requiredCapabilities: [...item.requiredCapabilities] }
+  return { manifestVersion: 1, id: item.id, name: item.name, version: item.version, description: item.description, icon: item.icon, entry: item.entry, ...(item.runtime ? { runtime: item.runtime } : {}), test: item.test ?? false, minShellVersion: item.minShellVersion, platformApi: { major: item.platformApi.major, minor: item.platformApi.minor }, requiredCapabilities: [...item.requiredCapabilities] }
 }
+export function usesPlatformRuntime(manifest: LocalAppManifest) { return manifest.runtime === 'platform' || manifest.requiredCapabilities.length > 0 }
 function https(value: unknown) {
   string(value, 'HTTPS 地址', 2048)
   const url = new URL(value)

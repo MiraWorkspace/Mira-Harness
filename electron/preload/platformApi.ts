@@ -17,6 +17,18 @@ export const platformApi = {
     restart: () => ipcRenderer.invoke('platform:apps', 'restart'),
   },
   bindHostedBrowser: (sessionId: string, browserId: string, guestId: number) => ipcRenderer.invoke('mira:browser-bind', sessionId, browserId, guestId),
+  appView: {
+    setShellOverlay: (id: number, open: boolean) => ipcRenderer.invoke('platform:app-view', 'overlay', { id, open }),
+    open: (appId: string) => ipcRenderer.invoke('platform:app-view', 'open', { appId }),
+    setBounds: (id: number, bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('platform:app-view', 'bounds', { id, bounds }),
+    close: (id: number) => ipcRenderer.invoke('platform:app-view', 'close', { id }),
+    onFailed: (listener: (event: { id: number; message: string }) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, value: { id: number; message: string }) => listener(value)
+      ipcRenderer.on('mira-app:failed', handler)
+      return () => { ipcRenderer.removeListener('mira-app:failed', handler) }
+    },
+  },
+  clearAppData: (appId: string) => ipcRenderer.invoke('platform:clear-app-data', appId),
   hooks: {
     list: (params: unknown = {}) => ipcRenderer.invoke('platform:hooks', 'hooks.list', params),
     save: (params: unknown) => ipcRenderer.invoke('platform:hooks', 'hooks.save', params),

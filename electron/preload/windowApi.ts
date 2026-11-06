@@ -21,6 +21,11 @@ export const windowApi = {
     return () => ipcRenderer.removeListener('window:zoom-changed', handler)
   },
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  onWindowShortcut: (listener: (input: { key: string; code: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, input: Parameters<typeof listener>[0]) => listener(input)
+    ipcRenderer.on('window:shortcut', handler)
+    return () => ipcRenderer.removeListener('window:shortcut', handler)
+  },
   onWindowCloseContext: (listener: () => void) => {
     const handler = () => listener()
     ipcRenderer.on('window:close-context', handler)

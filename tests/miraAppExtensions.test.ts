@@ -62,6 +62,17 @@ it('shows discovery, installed and blocked tabs, and adds the debug tab only for
   expect(host.api.setBlocked).not.toHaveBeenCalled()
 })
 
+it('keeps first-party debug scanning and Discover installation without a local-package action', async () => {
+  const view = mount(); await drain()
+  expect(view.element.querySelector('[aria-label="安装本地应用"]')).toBeNull()
+  expect(view.element.querySelector('[aria-label="检查更新"]')).not.toBeNull()
+  expect(host.api.scan).toHaveBeenCalledOnce()
+  host.api.install.mockResolvedValueOnce(structuredClone(state))
+  await view.click('安装 Mira Workbench')
+  expect(host.api.install).toHaveBeenCalledExactlyOnceWith('mira-workbench')
+  expect(host.confirm).not.toHaveBeenCalled()
+})
+
 it('renders installed app actions in the header and its update state in the footer', async () => {
   state.catalog!.apps = [state.catalog!.apps[0]]
   installed('0.0.1')

@@ -181,6 +181,11 @@ export class LocalMicroAppServer {
       response.writeHead(400, corsHeadersFor(request)).end()
       return
     }
+    if (url.pathname === '/mira-internal/legacy-workbench' && (request.method === 'GET' || request.method === 'HEAD')) {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", 'X-Content-Type-Options': 'nosniff' })
+      response.end(request.method === 'HEAD' ? undefined : '<!doctype html><title></title>')
+      return
+    }
     const match = url.pathname.match(/^\/apps\/([^/]+)\/?(.*)$/)
     if (url.pathname.startsWith('/mira-media/') && this.mediaHandler) {
       this.mediaHandler(url.pathname.slice('/mira-media/'.length), request, response)

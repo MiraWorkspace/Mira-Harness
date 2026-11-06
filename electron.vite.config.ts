@@ -8,7 +8,7 @@ const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta
 
 export default defineConfig({
   main: { plugins: [externalizeDepsPlugin()], build: { rollupOptions: { input: { main: resolve(__dirname, 'electron/main.ts'), 'resourceStorage.worker': resolve(__dirname, 'electron/bootstrap/resourceStorage.worker.ts') } } } },
-  preload: { plugins: [externalizeDepsPlugin()], build: { rollupOptions: { input: { preload: resolve(__dirname, 'electron/preload.ts'), resourceManager: resolve(__dirname, 'electron/preload/resourceManager.ts') } } } },
+  preload: { plugins: [externalizeDepsPlugin(), { name: 'mira-sandboxed-app-preload', generateBundle() { this.emitFile({ type: 'asset', fileName: 'appHost.cjs', source: readFileSync(resolve(__dirname, 'electron/preload/appHost.cjs')) }) } }], build: { rollupOptions: { input: { preload: resolve(__dirname, 'electron/preload.ts'), resourceManager: resolve(__dirname, 'electron/preload/resourceManager.ts') } } } },
   renderer: {
     root: __dirname,
     define: { __MIRA_VERSION__: JSON.stringify(appVersion) },

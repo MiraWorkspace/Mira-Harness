@@ -3,6 +3,11 @@ import { createMainWindow, handleWindowCommand, setupApplicationMenu } from '../
 import { miraTrafficLightPosition } from '../electron/bootstrap/miraDesktopZoom'
 import { windowApi } from '../electron/preload/windowApi'
 
+vi.mock('../electron/bootstrap/miraMainWindow', async () => {
+  const { BrowserWindow } = await import('electron')
+  return { createMiraMainWindow: (options: any) => new BrowserWindow(options), focusedMiraWindow: () => BrowserWindow.getFocusedWindow(), miraWindows: () => [] }
+})
+
 const about = vi.hoisted(() => vi.fn(async () => undefined))
 vi.mock('../electron/bootstrap/miraAbout', () => ({ showMiraAboutDialog: about }))
 

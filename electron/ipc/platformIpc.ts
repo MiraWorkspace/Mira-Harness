@@ -33,6 +33,10 @@ import { harnessPluginMcpCatalog, harnessProjectMcpCatalog } from '../services/h
 import type { MiraHookDelete, MiraHookEnabled, MiraHookWrite } from '../../src/config/miraHooks'
 import { HarnessHookCatalog } from '../services/harnessHookCatalog'
 import { isMiraPluginId } from '../../src/config/miraPlugins'
+import type { AppViewManager } from '../services/appViewManager'
+import { appPackageIdentity } from '../security/appPackageIdentity'
+import { isWorkbenchId, markLegacyDataCleared, WORKBENCH_LEGACY_CLEARED_KEY } from '../services/workbenchLegacyPolicy'
+import type { AppRuntime } from '../services/appRuntime'
 
 export interface PlatformIpcDependencies {
   computerSettings?: import('../services/miraComputerSettings').MiraComputerSettings
@@ -52,6 +56,9 @@ export interface PlatformIpcDependencies {
   mcpManager?: Pick<McpManager, 'getStatus'> & Partial<Pick<McpManager, 'reconnect'>>
   skillMarketplace?: SkillMarketplaceService
   automationScheduler?: AutomationScheduler
+  onThemePreferenceChanged?: () => void
+  appViews?: AppViewManager
+  appRuntime?: AppRuntime
 }
 
 function boundedString(value: unknown, field: string, maxLength: number) {
@@ -75,7 +82,7 @@ function resolveFirstPartyGrant(event: { sender: { id: number }; senderFrame?: {
   return { grant, manifest }
 }
 
-export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, apps, workspaceMedia, workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore() }: PlatformIpcDependencies) {
+export function registerPlatformIpcHandlers({ computerSettings, remoteControl, database, harnessRuntime, flows, localMicroAppServer, apps, workspaceMedia, workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore, mcpManager, skillMarketplace, automationScheduler, onThemePreferenceChanged, appViews, appRuntime, firstPartyManifests = firstPartyAppManifests, firstPartyGrantStore = new FirstPartyGrantStore() }: PlatformIpcDependencies) {
   const userAgents = (call: ReturnType<typeof parseFirstPartyHarnessCall>) => {
     if (!['agents.list', 'agents.read', 'agents.save', 'agents.delete', 'agents.setEnabled'].includes(call.method)) throw new Error('智能体请求无效')
     let directory: string | undefined
@@ -110,6 +117,39 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
   const browserProtection = new MiraBrowserProtection()
   const archivedSelections = new Map<string, { snapshotId: string; ids: readonly string[]; webContentsId: number }>()
   ipcMain.handle('platform:get-snapshot', () => apps?.snapshot() ?? database.getSnapshot())
+  ipcMain.handle('platform:app-view', (event, action: string, input: { appId?: string; id?: number; open?: boolean; bounds?: { x: number; y: number; width: number; height: number } } = {}) => {
+    requireMainFrame(event)
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    if (!appViews || !owner || owner.webContents !== event.sender) throw new Error('应用视图只能由宿主窗口管理')
+    if (action === 'open') return appViews.open(owner, boundedString(input.appId, '应用 ID', 64))
+    if (!Number.isSafeInteger(input.id) || input.id! < 1) throw new Error('应用视图 ID 无效')
+    if (action === 'overlay') return appViews.setShellOverlay(owner, input.id!, input.open!)
+    if (action === 'bounds') return appViews.setBounds(owner, input.id!, input.bounds!)
+    if (action === 'close') return appViews.close(owner, input.id!)
+    throw new Error('未知的应用视图操作')
+  })
+  ipcMain.handle('platform:clear-app-data', async (event, appId: unknown) => {
+    requireMainFrame(event)
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const frame = event.senderFrame
+    if (!appRuntime || !appViews || !apps || !owner || owner.webContents !== event.sender || !frame || frame !== event.sender.mainFrame || event.sender.isDestroyed()) throw new Error('应用数据只能由宿主窗口管理')
+    const id = boundedString(appId, '应用 ID', 64), item = apps.state().installed.find(entry => entry.id === id)
+    if (!item || item.error) throw new Error('未找到已安装应用')
+    const identity = appPackageIdentity(item.directory)
+    let navigated = false
+    const onNavigation = (navigation: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => { if (navigation.isMainFrame && !navigation.isSameDocument) navigated = true }
+    event.sender.on('did-start-navigation', onNavigation)
+    let result: Electron.MessageBoxReturnValue
+    try { result = await dialog.showMessageBox(owner, { type: 'warning', title: '清除应用数据', message: `清除「${item.name}」的本地应用数据库？`, detail: '此操作不可撤销。应用会关闭，安装文件将保留。', buttons: ['取消', '清除数据'], defaultId: 0, cancelId: 0, noLink: true }) }
+    finally { event.sender.removeListener('did-start-navigation', onNavigation) }
+    if (result.response !== 1) return false
+    requireMainFrame(event)
+    if (navigated || owner.isDestroyed() || event.sender.isDestroyed() || event.sender.mainFrame !== frame || event.senderFrame !== frame || appPackageIdentity(item.directory) !== identity || !apps.state().installed.some(entry => entry.id === id && entry.directory === item.directory && !entry.error)) throw new Error('应用已变化，请重新确认')
+    appViews.closeApp(id)
+    if (isWorkbenchId(id)) database.savePreference(WORKBENCH_LEGACY_CLEARED_KEY, markLegacyDataCleared(database.getSnapshot().preferences, id))
+    appRuntime.clearAppData(id)
+    return true
+  })
   ipcMain.handle('platform:apps', (event, action: string, input: { id?: string; enabled?: boolean; blocked?: boolean; url?: string } = {}) => {
     requireMainFrame(event)
     if (!apps) throw new Error('应用服务不可用')
@@ -180,7 +220,9 @@ export function registerPlatformIpcHandlers({ computerSettings, remoteControl, d
   })
   ipcMain.handle('platform:save-preference', (_event, key: string, value: unknown) => {
     if (key === 'followupMode') assertComposerFollowupMode(value)
-    return database.savePreference(key, value)
+    const result = database.savePreference(key, value)
+    if (key === 'themeMode') onThemePreferenceChanged?.()
+    return result
   })
   ipcMain.handle('platform:update-menus', (_event, menus) => database.saveMenus(menus))
   ipcMain.handle('platform:update-microapps', (_event, records: MicroApp[]) => {

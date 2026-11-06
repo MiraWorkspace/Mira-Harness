@@ -35,3 +35,21 @@ export function isAllowedHostedBrowserUrl(value: string) {
     return false
   }
 }
+
+export function configureWorkbenchPopupHandling(contents: Electron.WebContents, openTab: (url: string) => void) {
+  contents.setWindowOpenHandler(({ url, disposition }) => {
+    if (!isAllowedHostedBrowserUrl(url)) return { action: 'deny' }
+    if (isWorkbenchPopupDisposition(disposition)) return {
+      action: 'allow',
+      overrideBrowserWindowOptions: { width: 560, height: 720, minWidth: 400, minHeight: 480, webPreferences: { partition: WORKBENCH_BROWSER_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } },
+    }
+    openTab(url)
+    return { action: 'deny' }
+  })
+  contents.on('did-create-window', popup => {
+    popup.webContents.setWindowOpenHandler(({ url }) => isAllowedHostedBrowserUrl(url) ? { action: 'allow' } : { action: 'deny' })
+    popup.webContents.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
+    popup.webContents.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
+    popup.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  })
+}

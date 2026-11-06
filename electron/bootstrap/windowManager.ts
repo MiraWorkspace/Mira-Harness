@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { shouldBlockReloadShortcut } from '../windowShortcuts'
 import { isTrustedShellNavigation } from '../security/shellNavigation'
-import { HOSTED_BROWSER_PARTITION, WORKBENCH_BROWSER_PARTITION, configureMiraBrowserSession, isAllowedHostedBrowserUrl, isMiraBrowserPartition, isWorkbenchPopupDisposition } from '../security/hostedBrowser'
+import { HOSTED_BROWSER_PARTITION, WORKBENCH_BROWSER_PARTITION, configureMiraBrowserSession, configureWorkbenchPopupHandling, isAllowedHostedBrowserUrl, isMiraBrowserPartition } from '../security/hostedBrowser'
 import { alignMiraTrafficLights, applyMiraZoom, miraTrafficLightPosition, miraZoomLevel } from './miraDesktopZoom'
+import { createMiraMainWindow, focusedMiraWindow, miraWindows } from './miraMainWindow'
 
 export interface MainWindowState { bounds: { x: number; y: number; width: number; height: number }; maximized: boolean; fullScreen: boolean }
 
@@ -28,39 +29,18 @@ function notifyWorkbenchNewTab(guest: Electron.WebContents, url: string) {
   void guest.hostWebContents?.executeJavaScript(`window.postMessage(${JSON.stringify({ type: 'mira:workbench-open-tab', url })}, '*')`).catch(() => undefined)
 }
 
-function secureWorkbenchPopup(contents: Electron.WebContents) {
-  contents.setWindowOpenHandler(({ url }) => isAllowedHostedBrowserUrl(url) ? { action: 'allow' } : { action: 'deny' })
-  contents.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
-  contents.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
-  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-}
-
 function configureWorkbenchGuest(guest: Electron.WebContents) {
-  guest.setWindowOpenHandler(({ url, disposition }) => {
-    if (!isAllowedHostedBrowserUrl(url)) return { action: 'deny' }
-    if (isWorkbenchPopupDisposition(disposition)) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: 560, height: 720, minWidth: 400, minHeight: 480,
-          webPreferences: { partition: WORKBENCH_BROWSER_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
-        },
-      }
-    }
-    notifyWorkbenchNewTab(guest, url)
-    return { action: 'deny' }
-  })
-  guest.on('did-create-window', popup => secureWorkbenchPopup(popup.webContents))
+  configureWorkbenchPopupHandling(guest, url => notifyWorkbenchNewTab(guest, url))
 }
 
 export function navigateToAbout(window?: BrowserWindow | null) {
-  const target = window ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const target = window ?? focusedMiraWindow() ?? miraWindows()[0]
   target?.webContents.send('window:navigate', '/settings/about')
 }
 
 export function showMainWindow() {
   if (windowManagerOptions?.isQuitting()) return
-  const window = BrowserWindow.getAllWindows()[0]
+  const window = miraWindows()[0]
   if (window) {
     if (!window.isVisible()) window.show()
     window.focus()
@@ -89,7 +69,7 @@ export function setupDevelopmentDockIcon() {
 }
 
 export function setupApplicationMenu() {
-  const zoom = (action: 'in' | 'out' | 'reset', window?: BrowserWindow | null) => applyMiraZoom(window ?? BrowserWindow.getFocusedWindow(), action, windowManagerOptions?.saveDesktopZoomLevel)
+  const zoom = (action: 'in' | 'out' | 'reset', window?: BrowserWindow | null) => applyMiraZoom(window ?? focusedMiraWindow(), action, windowManagerOptions?.saveDesktopZoomLevel)
   const viewMenu: MenuItemConstructorOptions[] = [
     { label: '切换全屏', role: 'togglefullscreen' },
     { type: 'separator' },
@@ -100,8 +80,8 @@ export function setupApplicationMenu() {
   ]
   if (!app.isPackaged) {
     viewMenu.unshift(
-      { label: '重新加载', role: 'reload' },
-      { label: '开发者工具', role: 'toggleDevTools' },
+      { label: '重新加载', accelerator: 'CmdOrCtrl+R', click: (_item, window) => ((window as BrowserWindow | undefined) ?? focusedMiraWindow())?.webContents.reload() },
+      { label: '开发者工具', accelerator: process.platform === 'darwin' ? 'Alt+Command+I' : 'Control+Shift+I', click: (_item, window) => ((window as BrowserWindow | undefined) ?? focusedMiraWindow())?.webContents.toggleDevTools() },
       { type: 'separator' },
     )
   }
@@ -110,10 +90,10 @@ export function setupApplicationMenu() {
     {
       label: 'Mira',
       submenu: [
-        { label: '关于 Mira', click: (_item, window) => { void showMiraAboutDialog((window as BrowserWindow | undefined) ?? BrowserWindow.getFocusedWindow()).catch(console.error) } },
+        { label: '关于 Mira', click: (_item, window) => { void showMiraAboutDialog((window as BrowserWindow | undefined) ?? focusedMiraWindow()).catch(console.error) } },
         { label: '关于设置页', visible: false, accelerator: 'CmdOrCtrl+I', click: (_item, window) => navigateToAbout(window as BrowserWindow | undefined) },
         { label: '设置', accelerator: 'CmdOrCtrl+,', click: (_item, window) => {
-          const target = (window as BrowserWindow | undefined) ?? BrowserWindow.getFocusedWindow()
+          const target = (window as BrowserWindow | undefined) ?? focusedMiraWindow()
           target?.webContents.send('window:navigate', '/settings/general')
         } },
         { type: 'separator' },
@@ -139,7 +119,7 @@ export function setupApplicationMenu() {
       { label: '最小化', role: 'minimize' },
       { label: '缩放', role: 'zoom' },
       { label: '关闭标签或窗口', accelerator: 'CmdOrCtrl+W', click: (_item, window) => {
-        const target = (window as BrowserWindow | undefined) ?? BrowserWindow.getFocusedWindow()
+        const target = (window as BrowserWindow | undefined) ?? focusedMiraWindow()
         if (target && isResourceManagerWindow(target)) target.close()
         else target?.webContents.send('window:close-context')
       } },
@@ -163,7 +143,7 @@ export function createMainWindow(options: WindowManagerOptions) {
     const width = Math.min(bounds.width, area.width), height = Math.min(bounds.height, area.height)
     return { width, height, x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)), y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - height)) }
   })() : {}
-  const window = new BrowserWindow({
+  const window = createMiraMainWindow({
     width: 1440, height: 900, ...restoredBounds, minWidth: 1024, minHeight: 680,
     show: false,
     backgroundColor: '#f7f7f8',
@@ -230,7 +210,7 @@ export function createMainWindow(options: WindowManagerOptions) {
 }
 
 export function handleWindowCommand(event: IpcMainEvent, action: string) {
-  const window = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0]
+  const window = BrowserWindow.fromWebContents(event.sender) ?? miraWindows()[0]
   if (!window) return
   switch (action) {
     case 'resources': openResourceManager(); break

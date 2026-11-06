@@ -1,13 +1,14 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { strToU8, zipSync } from 'fflate'
+import { strToU8, unzipSync, zipSync } from 'fflate'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { compareAppVersions, compatibleAppRelease, parseAppsCatalog, parseLocalAppManifest, validateCatalogUrl } from '../src/config/miraApps'
 import { MiraPaths } from '../electron/storage/miraPaths'
 import { LocalMicroAppServer } from '../electron/adapters/localMicroAppServer'
-import { MiraApps } from '../electron/services/miraApps'
+import { MiraApps, inspectMiniappPackage } from '../electron/services/miraApps'
+import { AppRuntime } from '../electron/services/appRuntime'
 import { microApps } from '../src/config/microApps'
 import { applications, applyPlatformSnapshot } from '../src/config/runtime'
 import { resolveMicroAppEntryUrl } from '../src/config/navigation'
@@ -56,6 +57,8 @@ describe('application package and remote catalog contract', () => {
   it('rejects unsafe package paths, malformed test flags, and arbitrary catalog destinations', () => {
     for (const entry of ['../index.html', '/index.html', 'https://example.com/', 'assets\\index.html', '%2e%2e/index.html']) expect(() => parseLocalAppManifest({ ...manifest, entry })).toThrow()
     expect(() => parseLocalAppManifest({ ...manifest, test: 'true' })).toThrow('test')
+    expect(() => parseLocalAppManifest({ ...manifest, runtime: 'unknown' })).toThrow('运行时')
+    expect(() => parseLocalAppManifest({ ...manifest, runtime: 'platform' })).toThrow('1.1')
     expect(validateCatalogUrl(url)).toBe(url)
     expect(validateCatalogUrl('https://github.com/tuyn53/Mira-Harness/releases/latest/download/apps-catalog.json')).toContain('/latest/download/')
     for (const value of ['http://github.com/a/b/releases/download/v1/apps.json', 'https://example.com/apps.json', 'https://github.com/a/b/blob/main/apps.json', `${url}?token=secret`]) expect(() => validateCatalogUrl(value)).toThrow()
@@ -63,6 +66,60 @@ describe('application package and remote catalog contract', () => {
 })
 
 describe('local applications discovery and lifecycle', () => {
+  it('exports only bounded installed package icons as image data', () => {
+    const f = fixture(); f.apps.scan()
+    expect(f.apps.platformIcon(manifest.id)).toBe(`data:image/png;base64,${Buffer.from('logo').toString('base64')}`)
+    writeFileSync(join(f.directory, 'logo.png'), Buffer.alloc(1024 * 1024 + 1))
+    expect(f.apps.platformIcon(manifest.id)).toBeUndefined()
+    rmSync(join(f.directory, 'logo.png'))
+    symlinkSync('/etc/hosts', join(f.directory, 'logo.png'))
+    expect(f.apps.platformIcon(manifest.id)).toBeUndefined()
+    expect(f.apps.platformIcon('unknown')).toBeUndefined()
+  })
+
+  it('serves a script-free legacy migration document from the local origin', async () => {
+    const f = fixture()
+    await f.server.start([])
+    const response = await fetch(`http://127.0.0.1:${f.server.port}/mira-internal/legacy-workbench`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.text()).toBe('<!doctype html><title></title>')
+  })
+
+  it('invalidates application sessions on disable, package manifest change, and external removal', () => {
+    const f = fixture(), invalidate = vi.fn()
+    f.apps.onAppInvalidated(invalidate)
+    f.apps.scan()
+    f.apps.setEnabled(manifest.id, false)
+    expect(invalidate).toHaveBeenCalledWith(manifest.id, 'disabled')
+    invalidate.mockClear()
+    f.apps.setEnabled(manifest.id, true)
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, name: 'New name' }))
+    f.apps.scan()
+    expect(invalidate).toHaveBeenCalledWith(manifest.id, 'changed')
+    invalidate.mockClear()
+    rmSync(f.directory, { recursive: true })
+    f.apps.scan()
+    expect(invalidate).toHaveBeenCalledWith(manifest.id, 'removed')
+  })
+
+  it('resolves installed application identity from current package content and refuses stale or disabled packages', () => {
+    const f = fixture()
+    f.apps.scan()
+    const first = f.apps.resolvePlatformApp(manifest.id)
+    expect(first).toMatchObject({ id: manifest.id, enabled: true, requiredCapabilities: [] })
+    expect(first?.installationId).toMatch(/^[a-f0-9]{64}$/)
+    writeFileSync(join(f.directory, 'index.html'), '<h1>Changed</h1>')
+    expect(f.apps.resolvePlatformApp(manifest.id)?.installationId).not.toBe(first?.installationId)
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, name: 'Changed' }))
+    expect(f.apps.resolvePlatformApp(manifest.id)).toBeUndefined()
+    f.apps.scan()
+    expect(f.apps.resolvePlatformApp(manifest.id)).toBeDefined()
+    f.apps.setEnabled(manifest.id, false)
+    expect(f.apps.resolvePlatformApp(manifest.id)).toBeUndefined()
+  })
+
   it('detects Finder-style removal without manual scanning and invalidates its resource entry', async () => {
     const f = fixture()
     f.apps.scan(); await f.server.start(f.apps.snapshot().microApps); f.apps.scan()
@@ -128,7 +185,7 @@ describe('local applications discovery and lifecycle', () => {
   it('keeps invalid packages visible as errors and never grants capabilities or replaces Harness', () => {
     const f = fixture()
     writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, requiredCapabilities: ['harness:workbench'] }))
-    expect(f.apps.scan().installed[0].error).toContain('能力授权')
+    expect(f.apps.scan().installed[0].error).toContain('权限列表无效')
     expect(f.apps.snapshot().microApps).toHaveLength(1)
     for (const id of ['mira-harness', 'main']) {
       const spoof = join(f.paths.apps, id); mkdirSync(spoof)
@@ -190,6 +247,8 @@ describe('GitHub Release catalog fetching', () => {
 })
 
 const productionManifest = { ...manifest, id: 'mira-workbench', test: false }
+const miniappManifest = { ...productionManifest, id: 'example-miniapp', runtime: 'platform', platformApi: { major: 1, minor: 1 } }
+const miniappBytes = () => zipSync({ 'app-manifest.json': strToU8(JSON.stringify(miniappManifest)), 'index.html': strToU8('app'), 'logo.png': strToU8('logo') })
 function installationFixture(entries: Record<string, Uint8Array> = {}) {
   const bytes = zipSync({ 'app-manifest.json': strToU8(JSON.stringify(productionManifest)), 'index.html': strToU8('<h1>Installed Workbench</h1>'), 'logo.png': strToU8('logo'), ...entries })
   const remote = catalog(); remote.apps = [remote.apps[0]]
@@ -199,7 +258,223 @@ function installationFixture(entries: Record<string, Uint8Array> = {}) {
   return { ...fixture(fetcher as typeof fetch), bytes, remote, fetcher }
 }
 
+async function installCatalogPackage(f: ReturnType<typeof installationFixture>, apps: MiraApps, bytes: Uint8Array) {
+  const release = f.remote.apps[0].releases[0]
+  release.version = JSON.parse(new TextDecoder().decode(unzipSync(bytes)['app-manifest.json'])).version
+  release.package.sizeBytes = bytes.length
+  release.package.sha256 = createHash('sha256').update(bytes).digest('hex')
+  f.fetcher.mockImplementation(async input => String(input) === url ? new Response(JSON.stringify(f.remote)) : new Response(bytes))
+  await apps.refreshCatalog()
+  return apps.install('mira-workbench')
+}
+
 describe('official application installation and uninstallation', () => {
+  it('validates third-party packages without accepting first-party identities', () => {
+    expect(inspectMiniappPackage(miniappBytes())).toMatchObject({ id: 'example-miniapp', requiredCapabilities: [] })
+    expect(() => inspectMiniappPackage(installationFixture().bytes)).toThrow('第三方小程序')
+    const pkg = (changes: Record<string, unknown>, files: Record<string, Uint8Array> = {}) => zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, ...changes })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo'), ...files })
+    expect(() => inspectMiniappPackage(pkg({ id: 'other-app', requiredCapabilities: ['workbench:manage'] }))).toThrow('不能申请')
+    expect(() => inspectMiniappPackage(pkg({ entry: 'missing.html' }))).toThrow('包内文件不存在')
+    expect(() => inspectMiniappPackage(pkg({}, { '../escape': strToU8('bad') }))).toThrow()
+    expect(() => inspectMiniappPackage(pkg({ test: true }))).toThrow('测试应用')
+  })
+  it('stages a catalog update, keeps the old package until restart and preserves app data', async () => {
+    const f = installationFixture()
+    await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const oldIdentity = running.resolvePlatformApp('mira-workbench')?.installationId
+    const invalidated = vi.fn(); running.onAppInvalidated(invalidated)
+    const records = new Map<string, unknown>()
+    const runtime = new AppRuntime(join(f.paths.root, 'test-app-data'), { get: id => records.get(id), set: (id, value) => { records.set(id, value) }, delete: id => records.delete(id) }, id => running.resolvePlatformApp(id))
+    const session = runtime.open('mira-workbench', 1)
+    const dataDir = join(f.paths.root, 'app-data'); mkdirSync(dataDir, { recursive: true }); writeFileSync(join(dataDir, 'mira-workbench.sqlite'), 'saved')
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('new version'), 'logo.png': strToU8('logo') })
+    const state = await installCatalogPackage(f, running, update)
+    expect(state.pendingRestart).toEqual([{ id: 'mira-workbench', action: 'install' }])
+    expect(state.snapshot.microApps.find(item => item.code === 'mira-workbench')).toMatchObject({ enabled: true, version: '0.1.0' })
+    expect(running.resolvePlatformApp('mira-workbench')?.installationId).toBe(oldIdentity)
+    expect(invalidated).not.toHaveBeenCalled()
+    expect(runtime.authorize(session, 1).appId).toBe('mira-workbench')
+    expect(readFileSync(join(f.paths.apps, 'mira-workbench', 'index.html'), 'utf8')).toContain('Installed Workbench')
+    const restarted = f.create(); expect(restarted.scan().installed.find(item => item.id === 'mira-workbench')?.version).toBe('0.2.0')
+    expect(readFileSync(join(f.paths.apps, 'mira-workbench', 'index.html'), 'utf8')).toBe('new version')
+    expect(readFileSync(join(dataDir, 'mira-workbench.sqlite'), 'utf8')).toBe('saved')
+    await expect(installCatalogPackage(f, restarted, update)).rejects.toThrow('高于')
+    runtime.close()
+  })
+
+  it('recovers an interrupted update after the old directory was backed up', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('new'), 'logo.png': strToU8('logo') })
+    await installCatalogPackage(f, running, update)
+    const target = join(f.paths.apps, 'mira-workbench'), backup = join(f.paths.apps, '.backup-mira-workbench')
+    renameSync(target, backup)
+    expect(f.create().scan().installed.find(item => item.id === 'mira-workbench')?.version).toBe('0.2.0')
+    expect(existsSync(backup)).toBe(false)
+  })
+
+  it('does not activate a staged update whose content changed before restart', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('new'), 'logo.png': strToU8('logo') })
+    await installCatalogPackage(f, running, update)
+    writeFileSync(join(f.paths.apps, '.update-mira-workbench', 'index.html'), 'modified')
+    const retry = f.create()
+    expect(retry.scan().installed.find(item => item.id === 'mira-workbench')).toMatchObject({ version: '0.1.0', updateError: expect.any(String) })
+    expect(readFileSync(join(f.paths.apps, '.update-mira-workbench', 'index.html'), 'utf8')).toBe('modified')
+    expect(readFileSync(join(f.paths.apps, 'mira-workbench', 'index.html'), 'utf8')).toContain('Installed Workbench')
+    await installCatalogPackage(f, retry, update)
+    expect(f.create().scan().installed.find(item => item.id === 'mira-workbench')?.version).toBe('0.2.0')
+    expect(readdirSync(f.paths.apps).some(name => name.startsWith('.rejected-mira-workbench-'))).toBe(true)
+  })
+
+  it('restores the backup when an interrupted update left a damaged target', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const target = join(f.paths.apps, 'mira-workbench'), backup = join(f.paths.apps, '.backup-mira-workbench')
+    renameSync(target, backup); mkdirSync(target); writeFileSync(join(target, 'app-manifest.json'), '{broken')
+    const restored = f.create().scan().installed.find(item => item.id === 'mira-workbench')
+    expect(restored).toMatchObject({ version: '0.1.0', enabled: true })
+    expect(readFileSync(join(target, 'index.html'), 'utf8')).toContain('Installed Workbench')
+    expect(readFileSync(join(f.paths.apps, '.failed-mira-workbench', 'app-manifest.json'), 'utf8')).toBe('{broken')
+    expect(existsSync(backup)).toBe(false)
+  })
+
+  it('does not restore a changed backup when an interrupted update left a damaged target', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('new'), 'logo.png': strToU8('logo') })
+    await installCatalogPackage(f, running, update)
+    const target = join(f.paths.apps, 'mira-workbench'), backup = join(f.paths.apps, '.backup-mira-workbench')
+    renameSync(target, backup); writeFileSync(join(backup, 'index.html'), 'changed backup')
+    mkdirSync(target); writeFileSync(join(target, 'app-manifest.json'), '{broken')
+    const state = f.create().scan()
+    expect(state.installed.find(item => item.id === 'mira-workbench')?.error).toBeTruthy()
+    expect(readFileSync(join(backup, 'index.html'), 'utf8')).toBe('changed backup')
+    expect(readFileSync(join(target, 'app-manifest.json'), 'utf8')).toBe('{broken')
+  })
+
+  it('updates a disabled app without changing its enabled state', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan(); running.setEnabled('mira-workbench', false)
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('new'), 'logo.png': strToU8('logo') })
+    await installCatalogPackage(f, running, update)
+    const restored = f.create().scan().installed.find(item => item.id === 'mira-workbench')
+    expect(restored).toMatchObject({ version: '0.2.0', enabled: false })
+  })
+
+  it('stages an update downloaded from the catalog', async () => {
+    const f = installationFixture(); await installCatalogPackage(f, f.apps, f.bytes)
+    const running = f.create(); running.scan()
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...productionManifest, version: '0.2.0' })), 'index.html': strToU8('remote update'), 'logo.png': strToU8('logo') })
+    const release = f.remote.apps[0].releases[0]; release.version = '0.2.0'; release.package.sizeBytes = update.length; release.package.sha256 = createHash('sha256').update(update).digest('hex')
+    f.fetcher.mockImplementation(async input => String(input) === url ? new Response(JSON.stringify(f.remote)) : new Response(update))
+    await running.refreshCatalog()
+    await running.install('mira-workbench')
+    expect(readFileSync(join(f.paths.apps, 'mira-workbench', 'index.html'), 'utf8')).toContain('Installed Workbench')
+    expect(f.create().scan().installed.find(item => item.id === 'mira-workbench')?.version).toBe('0.2.0')
+  })
+
+  it('retains SDK capabilities when rediscovering an installed package after restart', () => {
+    const f = fixture()
+    const id = 'sdk-test-app'
+    const requiredCapabilities = ['storage:app', 'appearance:read', 'models:generate', 'notifications:send']
+    const files = { 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, id, requiredCapabilities })), 'index.html': strToU8('<!doctype html><title>SDK test fixture</title>'), 'logo.png': strToU8('logo') }
+    const state = f.apps.installMiniapp(zipSync(files))
+    expect(state.pendingRestart).toEqual([{ id, action: 'install' }])
+    const restarted = f.create(), installed = restarted.scan()
+    expect(installed.snapshot.microApps.some(app => app.code === id)).toBe(false)
+    expect(restarted.miniapps()).toEqual([expect.objectContaining({ id, enabled: true })])
+    expect(restarted.resolvePlatformApp(id)?.firstParty).toBe(false)
+    expect(restarted.resolvePlatformApp(id)?.requiredCapabilities).toEqual(['appearance:read', 'models:generate', 'notifications:send', 'storage:app'])
+  })
+
+  it('keeps third-party installation separate from first-party discovery and debug applications', async () => {
+    const f = installationFixture()
+    const state = f.apps.installMiniapp(miniappBytes())
+    expect(state.pendingRestart).toEqual([{ id: 'example-miniapp', action: 'install' }])
+    const restarted = f.create(); restarted.scan()
+    expect(restarted.miniapps()).toEqual([expect.objectContaining({ id: 'example-miniapp', enabled: true })])
+    expect(restarted.state().installed.some(item => item.id === 'example-miniapp')).toBe(false)
+    expect(restarted.snapshot().microApps.some(item => item.code === 'example-miniapp')).toBe(false)
+    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
+    expect(restarted.resolvePlatformApp(manifest.id)?.firstParty).toBe(true)
+    expect(() => f.apps.installMiniapp(miniappBytes())).toThrow('重启')
+    const runtime = new AppRuntime(join(f.root, 'runtime-data'), { get: () => undefined, set: () => {}, delete: () => false }, id => restarted.resolvePlatformApp(id))
+    expect(() => runtime.open('example-miniapp', 1)).toThrow('尚未批准')
+    expect(runtime.authorize(runtime.open(manifest.id, 2), 2).appId).toBe(manifest.id)
+    runtime.close()
+    await restarted.refreshCatalog()
+    await restarted.install('mira-workbench')
+    expect(f.create().scan().snapshot.microApps.some(app => app.code === 'mira-workbench')).toBe(true)
+  })
+
+  it('rejects unsafe or impersonating miniapps without modifying first-party applications', () => {
+    const f = installationFixture()
+    const bad = zipSync({ 'app-manifest.json': strToU8(JSON.stringify(miniappManifest)), '../escape.html': strToU8('bad'), 'index.html': strToU8('app') })
+    expect(() => f.apps.installMiniapp(bad)).toThrow()
+    expect(readdirSync(f.paths.apps)).toEqual([manifest.id])
+    expect(existsSync(join(f.paths.root, 'escape.html'))).toBe(false)
+    const privileged = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, requiredCapabilities: ['harness:workbench'] })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo') })
+    expect(() => f.apps.installMiniapp(privileged)).toThrow('权限列表无效')
+    expect(() => f.apps.installMiniapp(f.bytes)).toThrow('第三方小程序')
+    expect(readdirSync(f.paths.apps)).toEqual([manifest.id])
+    const impersonating = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, id: 'other-app', requiredCapabilities: ['workbench:manage'] })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo') })
+    expect(() => f.apps.installMiniapp(impersonating)).toThrow('不能申请')
+    const collision = join(f.paths.apps, miniappManifest.id)
+    mkdirSync(collision); writeFileSync(join(collision, 'app-manifest.json'), JSON.stringify(miniappManifest)); writeFileSync(join(collision, 'index.html'), 'first party'); writeFileSync(join(collision, 'logo.png'), 'logo')
+    expect(() => f.apps.installMiniapp(miniappBytes())).toThrow('不能替换第一方')
+    expect(readFileSync(join(collision, 'index.html'), 'utf8')).toBe('first party')
+  })
+
+  it('updates and uninstalls third-party packages within their own directory', () => {
+    const f = fixture(); f.apps.installMiniapp(miniappBytes())
+    const running = f.create(); running.scan()
+    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, version: '0.2.0' })), 'index.html': strToU8('updated'), 'logo.png': strToU8('logo') })
+    running.installMiniapp(update)
+    expect(running.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
+    const restarted = f.create(); restarted.scan()
+    expect(restarted.miniapps()[0]).toMatchObject({ id: 'example-miniapp', version: '0.2.0' })
+    expect(readFileSync(join(f.paths.apps, '.miniapps', 'example-miniapp', 'index.html'), 'utf8')).toBe('updated')
+    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
+    expect(restarted.snapshot().microApps.some(item => item.code === 'example-miniapp')).toBe(false)
+    restarted.uninstall('example-miniapp')
+    expect(existsSync(join(f.paths.apps, '.miniapps', 'example-miniapp'))).toBe(false)
+    expect(existsSync(f.directory)).toBe(true)
+    expect(restarted.miniapps()).toEqual([])
+  })
+
+  it('does not trust a miniapp claiming first-party or debug status in its manifest', () => {
+    const f = fixture(); f.apps.installMiniapp(miniappBytes())
+    const path = join(f.paths.apps, '.miniapps', 'example-miniapp', 'app-manifest.json')
+    writeFileSync(path, JSON.stringify({ ...miniappManifest, firstParty: true, test: true }))
+    const restarted = f.create(); restarted.scan()
+    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
+    expect(restarted.state().installed.some(item => item.id === 'example-miniapp')).toBe(false)
+  })
+
+  it('marks packages requesting supported capabilities for the isolated platform runtime', () => {
+    const f = fixture()
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, requiredCapabilities: ['storage:app', 'appearance:read'] }))
+    const state = f.apps.scan()
+    expect(state.installed[0].error).toBeUndefined()
+    expect(state.snapshot.microApps.find(app => app.code === manifest.id)).toMatchObject({ platformApp: true })
+    expect(f.apps.resolvePlatformApp(manifest.id)?.requiredCapabilities).toEqual(['appearance:read', 'storage:app'])
+  })
+
+  it('loads an explicitly declared platform application without capabilities and retains legacy behavior', () => {
+    const f = fixture()
+    const legacy = f.apps.scan().snapshot.microApps.find(app => app.code === manifest.id)
+    expect(legacy?.platformApp).toBe(false)
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 1 } }))
+    const updated = f.apps.scan().snapshot.microApps.find(app => app.code === manifest.id)
+    expect(updated?.platformApp).toBe(true)
+    expect(f.apps.resolvePlatformApp(manifest.id)?.requiredCapabilities).toEqual([])
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 2 } }))
+    expect(f.apps.scan().installed[0].error).toContain('不支持')
+  })
+
   it('waits for restart before loading an install, then deletes files and retains restart state after uninstall', async () => {
     const f = installationFixture()
     await f.apps.refreshCatalog()

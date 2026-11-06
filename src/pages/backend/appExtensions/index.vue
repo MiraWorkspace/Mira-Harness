@@ -37,6 +37,7 @@
                 <template #dropdown><el-dropdown-menu>
                   <el-dropdown-item command="github" :disabled="!application.repository">在 GitHub 查看</el-dropdown-item>
                   <el-dropdown-item :command="application.blocked ? 'unblock' : 'block'">{{ application.blocked ? '取消屏蔽' : '屏蔽' }}</el-dropdown-item>
+                  <el-dropdown-item command="clear-data">清除应用数据</el-dropdown-item>
                   <el-dropdown-item command="uninstall" divided class="is-danger" :disabled="application.restart === 'uninstall' || removing === application.id">卸载</el-dropdown-item>
                 </el-dropdown-menu></template>
               </el-dropdown>
@@ -45,6 +46,7 @@
             </header>
             <div class="app-card__meta"><span><AppIcon name="lucide:tag" :size="13" aria-hidden="true" />v{{ application.version || '未知' }}</span><span><AppIcon name="lucide:package" :size="13" aria-hidden="true" />{{ sizeLabel(application.sizeBytes) }}</span></div>
             <p class="app-card__description">{{ application.description || '暂无应用描述。' }}</p>
+            <p v-if="application.updateError" role="alert">{{ application.updateError }}</p>
             <footer class="app-card__footer">
               <span />
               <template v-if="application.installed && !application.test">
@@ -91,8 +93,9 @@ interface AppCard {
   restart?: 'install' | 'uninstall'
   release?: AppRelease
   repository?: string
+  updateError?: string
 }
-type InstalledMenuAction = 'github' | 'block' | 'unblock' | 'uninstall'
+type InstalledMenuAction = 'github' | 'block' | 'unblock' | 'uninstall' | 'clear-data'
 
 const state = ref<AppsState>()
 const query = ref('')
@@ -117,13 +120,13 @@ function cardFromCatalog(application: CatalogApp): AppCard {
   const local = localApp(application.id), release = releaseFor(application), restart = state.value?.pendingRestart.find(item => item.id === application.id)?.action
   return { id: application.id, name: application.name, description: local?.description || application.description, icon: local?.iconUrl || application.icon,
     version: local?.version || release?.version, sizeBytes: release?.package.sizeBytes ?? null, installed: Boolean(local) || restart === 'uninstall', test: Boolean(local?.test), blocked: blockedIds.value.has(application.id),
-    hasUpdate: Boolean(local?.version && release && compareAppVersions(release.version, local.version) > 0), restart, release, repository: application.repository }
+    hasUpdate: Boolean(local?.version && release && compareAppVersions(release.version, local.version) > 0), restart, release, repository: application.repository, updateError: local?.updateError }
 }
 function cardFromLocal(application: InstalledApp): AppCard {
   const catalog = catalogApps.value.find(item => item.id === application.id), release = releaseFor(catalog)
   return { id: application.id, name: application.name, description: application.description || catalog?.description, icon: application.iconUrl || catalog?.icon,
     version: application.version, sizeBytes: release?.package.sizeBytes ?? null, installed: true, test: application.test, blocked: blockedIds.value.has(application.id),
-    hasUpdate: Boolean(application.version && release && compareAppVersions(release.version, application.version) > 0), restart: state.value?.pendingRestart.find(item => item.id === application.id)?.action, release, repository: catalog?.repository }
+    hasUpdate: Boolean(application.version && release && compareAppVersions(release.version, application.version) > 0), restart: state.value?.pendingRestart.find(item => item.id === application.id)?.action, release, repository: catalog?.repository, updateError: application.updateError }
 }
 const discoveredCards = computed(() => catalogApps.value.map(cardFromCatalog).filter(item => !item.blocked && matches(item)))
 const allInstalledCards = computed(() => {
@@ -162,7 +165,10 @@ async function install(card: AppCard) {
   if (!card.release || installing.value) return
   installing.value = card.id
   try { receive(await api().install(card.id)) }
-  catch { /* 待重启时由页面内提示说明，不显示不可关闭的浮层通知。 */ }
+  catch (error) {
+    const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : '请稍后重试。'
+    ElNotification.error({ title: '安装或更新失败', message })
+  }
   finally { installing.value = '' }
 }
 async function uninstall(card: AppCard) {
@@ -183,7 +189,12 @@ function openRepository(repository?: string) {
 function handleInstalledMenu(card: AppCard, action: InstalledMenuAction) {
   if (action === 'github') openRepository(card.repository)
   else if (action === 'uninstall') void uninstall(card)
+  else if (action === 'clear-data') void clearAppData(card.id)
   else void setBlocked(card.id, action === 'block')
+}
+async function clearAppData(id: string) {
+  try { await getPlatformApi()?.clearAppData(id) }
+  catch { ElNotification.error({ title: '清除数据失败', message: '请检查应用状态后重试。' }) }
 }
 async function setBlocked(id: string, blocked: boolean) {
   try { receive(await api().setBlocked(id, blocked)) }

@@ -8,18 +8,27 @@ const fixture = vi.hoisted(() => {
   const window = { isDestroyed: () => false, hide: vi.fn(), once: vi.fn((event: string, handler: Function) => { if (event === 'closed') closed.set(window, handler) }), webContents: { send: vi.fn() } }
   return { reset, release: () => release(), closed, windows: [window], events: new Map<string, Function>(), window, show: vi.fn(), stop: vi.fn(async () => {}), dispose: vi.fn(() => pending), quit: vi.fn(), exit: vi.fn() }
 })
+vi.mock('../electron/bootstrap/miraMainWindow', () => ({ miraWindows: () => fixture.windows }))
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getPath: () => '/tmp/mira-shutdown-test', setPath: vi.fn(), whenReady: () => Promise.resolve(), on: (event: string, handler: Function) => fixture.events.set(event, handler), quit: fixture.quit, exit: fixture.exit },
+  app: { isPackaged: false, getPath: () => '/tmp/mira-shutdown-test', setPath: vi.fn(), getAppPath: () => '/tmp/mira-shutdown-test', whenReady: () => Promise.resolve(), on: (event: string, handler: Function) => fixture.events.set(event, handler), quit: fixture.quit, exit: fixture.exit },
   BrowserWindow: { getAllWindows: () => fixture.windows },
+  powerSaveBlocker: { start: vi.fn(), stop: vi.fn() }, nativeTheme: { on: vi.fn(), removeListener: vi.fn() }, ipcMain: { on: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../electron/services/platformServices', () => ({ createPlatformServices: async () => ({
+  apps: { startWatching: vi.fn(), stopWatching: vi.fn() }, appViews: { closeAll: vi.fn() }, appNotifications: { dispose: vi.fn() }, appRuntime: { close: vi.fn() },
   database: { getSnapshot: () => ({ preferences: {} }), modelTrace: { flush: vi.fn(async () => {}) } },
   localMicroAppServer: { stop: fixture.stop },
   automationScheduler: { stop: vi.fn() }, workspaceHtml: { closeAll: vi.fn() }, workspaceMedia: { closeAll: vi.fn() },
-  harnessRuntime: { disposeCommandJobs: fixture.dispose }, miraFlowController: { dispose: vi.fn(async () => {}) },
+  harnessRuntime: { disposeCommandJobs: fixture.dispose, onPublicEvent: vi.fn() }, miraFlowController: { dispose: vi.fn(async () => {}) },
   mcpManager: { closeAll: vi.fn(async () => {}) }, mcpAuthorization: { closeAll: vi.fn(async () => {}) },
 }) }))
-vi.mock('../electron/storage/miraPaths', () => ({ MiraPaths: class { ensure() { return { root: '/tmp/mira-shutdown-test' } } } }))
+vi.mock('../electron/storage/miraPaths', () => ({ MiraPaths: class { ensure() { return { root: '/tmp/mira-shutdown-test', stateDatabase: () => '/tmp/mira-shutdown-test/state.sqlite' } } } }))
+vi.mock('../electron/bootstrap/hardwareAcceleration', () => ({ applyHardwareAcceleration: vi.fn() }))
+vi.mock('../electron/bootstrap/resourceManager', () => ({ isResourceManagerWindow: () => false }))
+vi.mock('../electron/services/miraRemoteHarness', () => ({ createRemoteHarness: () => ({}) }))
+vi.mock('../electron/services/miraLanRemote', () => ({ MiraLanRemote: class { stop = vi.fn(async () => {}) } }))
+vi.mock('../electron/services/miraNotifications', () => ({ MiraNotifications: class { dispose = vi.fn() } }))
+vi.mock('../electron/ipc/notificationIpc', () => ({ registerNotificationIpc: vi.fn() }))
 vi.mock('../electron/bootstrap/windowManager', () => ({ createMainWindow: vi.fn(), destroyTray: vi.fn(), setupApplicationMenu: vi.fn(), setupDevelopmentDockIcon: vi.fn(), setupWindowsTray: vi.fn(), showMainWindow: fixture.show }))
 vi.mock('../electron/services/harnessTerminalSessions', () => ({ HarnessTerminalSessions: class { closeAll() {} } }))
 vi.mock('../electron/services/harnessWorkspaceWatch', () => ({ HarnessWorkspaceWatch: class { closeAll() {} } }))
@@ -50,6 +59,7 @@ it('hides the window before cleanup and rejects Dock activation while quitting',
   fixture.events.get('before-quit')!(event)
   expect(event.preventDefault).toHaveBeenCalledOnce()
   expect(fixture.window.hide).toHaveBeenCalledOnce()
+  await Promise.resolve()
   expect(fixture.dispose).toHaveBeenCalledOnce()
   expect(fixture.stop).not.toHaveBeenCalled()
   fixture.events.get('activate')!()

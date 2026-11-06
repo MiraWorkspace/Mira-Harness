@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ windows: [] as any[], cpus: [{ times: { user: 10, idle: 90 } }], metrics: [{ pid: 42, type: 'Browser', cpu: { percentCPUUsage: 3 }, memory: { workingSetSize: 2048 } }] }))
+vi.mock('../electron/bootstrap/miraMainWindow', () => ({ miraWindows: () => state.windows }))
 vi.mock('electron', () => ({
   app: { isPackaged: true, getAppMetrics: () => state.metrics },
   BrowserWindow: class {

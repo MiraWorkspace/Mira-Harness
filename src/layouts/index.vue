@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
 import { miraShortcutKeys, miraShortcutLabel } from '@/platform/workbenchShortcuts'
 import { useRoute, useRouter } from 'vue-router'
 import { applications, findRuntimeMicroApp } from '@/config/runtime'
@@ -98,6 +98,7 @@ onMounted(() => {
 onUnmounted(() => { removeZoomListener?.(); removeFullScreenListener?.(); removeAppsListener?.() })
 const showAppNavigation = computed(() => route.path === '/workspace/harness-react' && Boolean(appNavigation.state))
 const appMenuVisible = ref(false)
+provide('mira-shell-overlay-open', computed(() => appMenuVisible.value || commandPaletteStore.visible))
 const currentAppCode = computed(() => getAppCodeFromPath(route.path))
 const currentApp = computed(() => findRuntimeMicroApp(currentAppCode.value))
 const currentAppName = computed(() => {
@@ -129,6 +130,7 @@ function openSettings() {
 }
 
 .mira-shell__bar {
+  background: var(--cp-bg-elevated);
   display: flex;
   flex: 0 0 var(--cp-titlebar-height);
   align-items: center;
@@ -172,6 +174,14 @@ function openSettings() {
 </style>
 
 <style lang="scss">
+// The shell is raised above native app views for overlays. Its canvas must let
+// the live app beneath it show through; only the overlay itself paints on top.
+html.mira-native-overlay,
+.mira-native-overlay body,
+.mira-native-overlay #app,
+.mira-native-overlay .mira-shell,
+.mira-native-overlay .mira-shell__canvas,
+.mira-native-overlay .app-main--micro-app { background: transparent; }
 .mira-app-switcher-popper.el-popover { padding: 5px; border-color: var(--cp-border); background: var(--cp-bg-overlay); }
 .mira-app-switcher { display: flex; flex-direction: column; gap: 2px; transform-origin: top; }
 .mira-app-switcher button { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 10px; padding: 5px 8px; border: 0; border-radius: var(--cp-radius-sm); color: var(--cp-text); background: transparent; font-size: 13px; text-align: left; }

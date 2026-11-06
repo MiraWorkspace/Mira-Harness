@@ -1,4 +1,5 @@
-import { app, BrowserWindow, powerSaveBlocker, ipcMain, webContents } from 'electron'
+import { miraWindows } from './bootstrap/miraMainWindow'
+import { app, nativeTheme, powerSaveBlocker, ipcMain, webContents } from 'electron'
 import { join, resolve } from 'node:path'
 import { createPlatformServices, type PlatformServices } from './services/platformServices'
 import { registerPlatformIpcHandlers } from './ipc/platformIpc'
@@ -24,6 +25,7 @@ import { AutomationKeepAwake } from './services/automationKeepAwake'
 import { MiraNotifications } from './services/miraNotifications'
 import { registerNotificationIpc } from './ipc/notificationIpc'
 import { isResourceManagerWindow } from './bootstrap/resourceManager'
+import { miraHome } from './bootstrap/miraHome'
 
 const keepAwake = new AutomationKeepAwake(powerSaveBlocker)
 let keepAwakeTimer: ReturnType<typeof setInterval> | undefined
@@ -35,8 +37,7 @@ let shutdownComplete = false
 let notifications: MiraNotifications | undefined
 const terminalSessions = new HarnessTerminalSessions()
 const workspaceWatch = new HarnessWorkspaceWatch()
-const testHome = !app.isPackaged && process.env.MIRA_TEST_HOME ? resolve(process.env.MIRA_TEST_HOME) : undefined
-const miraPaths = new MiraPaths(testHome ?? app.getPath('home')).ensure()
+const miraPaths = new MiraPaths(miraHome(app.isPackaged, process.env, app.getPath('home'))).ensure()
 
 // Keep Mira's data portable and inspectable under the user's home directory on every desktop OS.
 app.setPath('userData', miraPaths.root)
@@ -48,22 +49,25 @@ function getCloseWindowBehavior(): 'background' | 'quit' {
 }
 
 function publishHarnessEvent(event: HarnessEvent) {
-  BrowserWindow.getAllWindows().forEach(window => {
+  miraWindows().forEach(window => {
     if (!window.isDestroyed()) window.webContents.send('harness:event', event)
   })
 }
 
+function publishAppTheme() { if (services) services.appViews.themeChanged(services.appTheme()) }
+
 app.whenReady().then(async () => {
   setupDevelopmentDockIcon()
   services = await createPlatformServices({ miraPaths, publishHarnessEvent })
+  nativeTheme.on('updated', publishAppTheme)
   services.apps.startWatching(state => {
-    BrowserWindow.getAllWindows().forEach(window => {
+    miraWindows().forEach(window => {
       if (!window.isDestroyed()) window.webContents.send('platform:apps-changed', state)
     })
   })
-  notifications = new MiraNotifications(services.database, () => BrowserWindow.getAllWindows().find(window => !isResourceManagerWindow(window)), sessionId => {
+  notifications = new MiraNotifications(services.database, () => miraWindows().find(window => !isResourceManagerWindow(window)), sessionId => {
     showMainWindow()
-    const window = BrowserWindow.getAllWindows().find(window => !isResourceManagerWindow(window))
+    const window = miraWindows().find(window => !isResourceManagerWindow(window))
     if (!window) return
     if (window.isMinimized()) window.restore()
     const navigate = () => window.webContents.send('notifications:open-session', sessionId)
@@ -89,7 +93,8 @@ app.whenReady().then(async () => {
     const enabled = services.database.getSnapshot().preferences.keepComputerAwake === true
     keepAwake.update(enabled, enabled)
   }, 1000)
-  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, apps: services.apps, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler })
+  registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, apps: services.apps, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler, onThemePreferenceChanged: publishAppTheme, appViews: services.appViews, appRuntime: services.appRuntime })
+  ipcMain.on('mira-app:ready', event => { services?.appViews.ready(event.sender, event.senderFrame) })
   ipcMain.handle('mira:browser-bind', (event, sessionId, browserId, guestId) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error('浏览器绑定仅允许主窗口调用')
     if (typeof sessionId !== 'string' || typeof browserId !== 'string' || !Number.isSafeInteger(guestId)) throw new Error('浏览器绑定参数无效')
@@ -125,7 +130,11 @@ app.on('before-quit', event => {
   keepAwake.dispose()
   notifications?.dispose()
   services?.apps?.stopWatching()
-  BrowserWindow.getAllWindows().forEach(window => { if (!window.isDestroyed()) window.hide() })
+  nativeTheme.removeListener('updated', publishAppTheme)
+  services?.appViews.closeAll()
+  services?.appNotifications.dispose()
+  services?.appRuntime.close()
+  miraWindows().forEach(window => { if (!window.isDestroyed()) window.hide() })
   destroyTray()
   services?.automationScheduler.stop()
   terminalSessions.closeAll()
@@ -143,8 +152,8 @@ app.on('before-quit', event => {
       shutdownComplete = true
       // macOS native quit may close every window without terminating after async preparation.
       // Finish on the actual closed event, after page unload and service persistence complete.
-      const windows = BrowserWindow.getAllWindows()
-      const exitAfterLastWindowClosed = () => { if (BrowserWindow.getAllWindows().length === 0) app.exit(0) }
+      const windows = miraWindows()
+      const exitAfterLastWindowClosed = () => { if (miraWindows().length === 0) app.exit(0) }
       for (const window of windows) window.once('closed', exitAfterLastWindowClosed)
       if (windows.length === 0) app.exit(0)
       else app.quit()

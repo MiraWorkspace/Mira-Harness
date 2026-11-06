@@ -1,3 +1,4 @@
+import { miraWindows } from './miraMainWindow'
 import { app, BrowserWindow, shell } from 'electron'
 import os from 'node:os'
 import { resolve } from 'node:path'
@@ -67,7 +68,7 @@ export function getResourceSnapshot(senderId: number): MiraResourceSnapshot {
   previousCpu = { busy, total }
   const cpuPercent = baseline && total > baseline.total ? Math.max(0, Math.min(100, 100 * (busy - baseline.busy) / (total - baseline.total))) : null
   const memoryTotalBytes = os.totalmem()
-  const renderers = new Map(BrowserWindow.getAllWindows().filter(window => !window.isDestroyed()).map(window => [window.webContents.getOSProcessId(), window === instance ? '资源管理器' : 'Mira 工作台']))
+  const renderers = new Map(miraWindows().filter(window => !window.isDestroyed()).map(window => [window.webContents.getOSProcessId(), window === instance ? '资源管理器' : 'Mira 工作台']))
   const names: Record<string, string> = { Browser: 'Mira 主进程', GPU: '图形处理', Tab: 'Mira 页面', Utility: '后台服务', 'Zygote': '进程服务' }
   return {
     sampledAt: Date.now(), system: { cpuPercent, memoryTotalBytes, memoryUsedBytes: Math.max(0, memoryTotalBytes - os.freemem()) },
