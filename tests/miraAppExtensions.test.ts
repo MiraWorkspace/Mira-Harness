@@ -30,7 +30,7 @@ beforeEach(() => {
   state = { directory: '/test/apps', installed: [], blocked: [], pendingRestart: [], catalogUrl: 'https://github.com/a/b/releases/download/catalog/apps.json', cached: false,
     snapshot: { mainMenus: [], microApps: [], preferences: {} },
     catalog: { schemaVersion: 1, revision: 1, publishedAt: '2026-11-04T00:00:00Z', apps: [
-      { id: 'mira-workbench', name: 'Mira Workbench', description: '网站合集', repository: 'https://github.com/tuyn53/Mira-Workbench', releases: [{ version: '0.1.0', channel: 'stable', publishedAt: '2026-11-04T00:00:00Z', releaseNotes: '', compatibility: { minShellVersion: '0.1.0-beta.1', platformApi: { major: 1, minor: 0 } }, package: { url: 'https://example.com/app.zip', sizeBytes: 2048, sha256: 'a'.repeat(64) } }] },
+      { id: 'mira-workbench', name: 'Mira Workbench', description: '网站合集', repository: 'https://github.com/MiraWorkspace/Mira-Workbench', releases: [{ version: '0.1.0', channel: 'stable', publishedAt: '2026-11-04T00:00:00Z', releaseNotes: '', compatibility: { minShellVersion: '0.1.0-beta.1', platformApi: { major: 1, minor: 0 } }, package: { url: 'https://example.com/app.zip', sizeBytes: 2048, sha256: 'a'.repeat(64) } }] },
       { id: 'mira-notes', name: 'Mira Notes', description: '本地笔记', repository: 'https://github.com/tuyn53/Mira-Notes', releases: [{ version: '0.2.0', channel: 'stable', publishedAt: '2026-11-04T00:00:00Z', releaseNotes: '', compatibility: { minShellVersion: '0.1.0-beta.1', platformApi: { major: 1, minor: 0 } }, package: { url: 'https://example.com/notes.zip', sizeBytes: 1024, sha256: 'b'.repeat(64) } }] },
     ] } }
   host.api = {
@@ -91,7 +91,7 @@ it('renders installed app actions in the header and its update state in the foot
   expect(view.text()).toContain('卸载')
   const open = vi.spyOn(window, 'open').mockReturnValue(null)
   view.element.querySelector<HTMLButtonElement>('[aria-label="菜单 github"]')!.click(); await drain()
-  expect(open).toHaveBeenCalledWith('https://github.com/tuyn53/Mira-Workbench', '_blank', 'noopener,noreferrer')
+  expect(open).toHaveBeenCalledWith('https://github.com/MiraWorkspace/Mira-Workbench', '_blank', 'noopener,noreferrer')
   view.element.querySelector<HTMLButtonElement>('[aria-label="菜单 uninstall"]')!.click(); await drain()
   expect(host.confirm).toHaveBeenCalled()
   expect(host.api.uninstall).toHaveBeenCalledWith('mira-workbench')

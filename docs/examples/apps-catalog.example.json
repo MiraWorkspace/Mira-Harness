@@ -9,8 +9,8 @@
       "id": "mira-workbench",
       "name": "Mira Workbench",
       "description": "聚合常用 AI 网站与搜索工具，支持自定义网站和内部标签页。",
-      "repository": "https://github.com/tuyn53/Mira-Workbench",
-      "icon": "https://github.com/tuyn53/Mira-Workbench/releases/download/v0.1.0/mira-workbench-logo.png",
+      "repository": "https://github.com/MiraWorkspace/Mira-Workbench",
+      "icon": "https://github.com/MiraWorkspace/Mira-Workbench/releases/download/v0.1.0/mira-workbench-logo.png",
       "releases": [
         {
           "version": "0.1.0",
@@ -25,7 +25,7 @@
             }
           },
           "package": {
-            "url": "https://github.com/tuyn53/Mira-Workbench/releases/download/v0.1.0/mira-workbench-0.1.0.zip",
+            "url": "https://github.com/MiraWorkspace/Mira-Workbench/releases/download/v0.1.0/mira-workbench-0.1.0.zip",
             "sizeBytes": null,
             "sha256": "REPLACE_WITH_REAL_64_CHARACTER_SHA256"
           }
