@@ -55,7 +55,7 @@ it('opens web and email links in the system handler without creating a window or
     getCloseWindowBehavior: () => 'quit', isQuitting: () => false,
   })
   const open = (window.webContents.setWindowOpenHandler as any).mock.calls[0][0]
-  for (const url of ['https://github.com/ChatWw/Mira-Harness', 'http://example.com', 'mailto:tuyn53@163.com']) {
+  for (const url of ['https://github.com/MiraWorkspace/Mira-Harness', 'http://example.com', 'mailto:tuyn53@163.com']) {
     expect(open({ url })).toEqual({ action: 'deny' })
     expect(electron.openExternal).toHaveBeenCalledExactlyOnceWith(url)
     electron.openExternal.mockClear()

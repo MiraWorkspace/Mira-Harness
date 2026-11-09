@@ -19,7 +19,7 @@ const servers: LocalMicroAppServer[] = []
 const services: MiraApps[] = []
 afterEach(async () => { services.splice(0).forEach(apps => apps.stopWatching()); vi.unstubAllGlobals(); await Promise.all(servers.splice(0).map(server => server.stop())); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 const manifest = { manifestVersion: 1, id: 'mira-workbench-test', name: 'Mira Workbench', version: '0.1.0', entry: 'index.html', icon: 'logo.png', test: true, minShellVersion: '0.1.0-beta.1', platformApi: { major: 1, minor: 0 }, requiredCapabilities: [] }
-const url = 'https://github.com/tuyn53/Mira-Harness/releases/download/apps-catalog/apps-catalog.json'
+const url = 'https://github.com/MiraWorkspace/Mira-Harness/releases/download/apps-catalog/apps-catalog.json'
 function fixture(fetcher: typeof fetch = vi.fn()) {
   const root = mkdtempSync(join(tmpdir(), 'mira-apps-')); roots.push(root)
   const paths = new MiraPaths(root).ensure()
@@ -60,7 +60,7 @@ describe('application package and remote catalog contract', () => {
     expect(() => parseLocalAppManifest({ ...manifest, runtime: 'unknown' })).toThrow('运行时')
     expect(() => parseLocalAppManifest({ ...manifest, runtime: 'platform' })).toThrow('1.1')
     expect(validateCatalogUrl(url)).toBe(url)
-    expect(validateCatalogUrl('https://github.com/tuyn53/Mira-Harness/releases/latest/download/apps-catalog.json')).toContain('/latest/download/')
+    expect(validateCatalogUrl('https://github.com/MiraWorkspace/Mira-Harness/releases/latest/download/apps-catalog.json')).toContain('/latest/download/')
     for (const value of ['http://github.com/a/b/releases/download/v1/apps.json', 'https://example.com/apps.json', 'https://github.com/a/b/blob/main/apps.json', `${url}?token=secret`]) expect(() => validateCatalogUrl(value)).toThrow()
   })
 })

@@ -24,7 +24,12 @@ export class WorkbenchBrowserViews {
   open(tabId: string, value: string) {
     this.validateId(tabId)
     if (!isAllowedHostedBrowserUrl(value) || value.length > 8192) throw new Error('网页地址无效')
-    if (this.tabs.has(tabId)) throw new Error('浏览器标签已存在')
+    const existing = this.tabs.get(tabId)
+    if (existing) {
+      existing.requestedUrl = value; existing.error = undefined; existing.faviconUrl = null
+      void existing.view.webContents.loadURL(value).catch(() => { if (this.tabs.get(tabId) === existing && existing.requestedUrl === value && !existing.error) { existing.error = '网页加载失败'; this.state(tabId) } })
+      return
+    }
     if (this.tabs.size >= 32) throw new Error('浏览器标签过多')
     const view = new WebContentsView({ webPreferences: { partition: WORKBENCH_BROWSER_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } })
     const contents = view.webContents, tab: Tab = { view, requestedUrl: value }
@@ -48,7 +53,7 @@ export class WorkbenchBrowserViews {
     this.owner.contentView.addChildView(view)
     this.viewAdded()
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-    void contents.loadURL(value).catch(() => { if (this.tabs.get(tabId) === tab && !tab.error) { tab.error = '网页加载失败'; this.state(tabId) } })
+    void contents.loadURL(value).catch(() => { if (this.tabs.get(tabId) === tab && tab.requestedUrl === value && !tab.error) { tab.error = '网页加载失败'; this.state(tabId) } })
     this.sync()
   }
 

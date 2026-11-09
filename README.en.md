@@ -10,10 +10,10 @@ Bring conversations, project files, a terminal, a browser, and tool execution in
 
 [简体中文](README.md) · **English**
 
-[![Release](https://img.shields.io/github/v/release/tuyn53/Mira-Harness?style=flat-square&color=525252&include_prereleases)](https://github.com/tuyn53/Mira-Harness/releases)
+[![Release](https://img.shields.io/github/v/release/MiraWorkspace/Mira-Harness?style=flat-square&color=525252&include_prereleases)](https://github.com/MiraWorkspace/Mira-Harness/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-525252?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-525252?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/tuyn53/Mira-Harness?style=flat-square&color=525252)](https://github.com/tuyn53/Mira-Harness/stargazers)
+[![Stars](https://img.shields.io/github/stars/MiraWorkspace/Mira-Harness?style=flat-square&color=525252)](https://github.com/MiraWorkspace/Mira-Harness/stargazers)
 
 [Download](#getting-started) · [Features](#features) · [Architecture](#architecture) · [Development](#development) · [Roadmap](#roadmap) · [FAQ](#faq)
 
@@ -100,7 +100,7 @@ Continue project conversations from a phone or another computer's browser on a t
 
 ### Download and install
 
-Get an installer from [GitHub Releases](https://github.com/tuyn53/Mira-Harness/releases).
+Get an installer from [GitHub Releases](https://github.com/MiraWorkspace/Mira-Harness/releases).
 
 | Platform | Architecture | Package |
 | --- | --- | --- |
@@ -239,7 +239,7 @@ LAN remote chat is off by default. When enabled, connect using the QR code or li
 - Build Windows installers on Windows. Native dependencies require the corresponding platform's build toolchain.
 
 ```bash
-git clone https://github.com/tuyn53/Mira-Harness.git
+git clone https://github.com/MiraWorkspace/Mira-Harness.git
 cd Mira-Harness
 npm install
 npm run dev
@@ -318,13 +318,13 @@ Enable **Accessibility** and **Screen Recording** for Mira in **System Settings 
 
 ## Contributing
 
-[Issues](https://github.com/tuyn53/Mira-Harness/issues) and pull requests are welcome.
+[Issues](https://github.com/MiraWorkspace/Mira-Harness/issues) and pull requests are welcome.
 
 - **Report a problem**: Include the app version, operating system, reproduction steps, and relevant screenshots or redacted logs.
 - **Submit code**: Run `npm run build` and `npm test` before submitting. Describe the change and how you verified it in your pull request.
 
-<a href="https://github.com/tuyn53/Mira-Harness/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=tuyn53/Mira-Harness" alt="Contributors" />
+<a href="https://github.com/MiraWorkspace/Mira-Harness/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=MiraWorkspace/Mira-Harness" alt="Contributors" />
 </a>
 
 ## Acknowledgments
@@ -333,10 +333,10 @@ Mira builds on open-source projects including [Electron](https://www.electronjs.
 
 ## Star History
 
-<a href="https://star-history.com/#tuyn53/Mira-Harness&Date">
+<a href="https://star-history.com/#MiraWorkspace/Mira-Harness&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=tuyn53/Mira-Harness&type=Date&theme=dark" />
-    <img src="https://api.star-history.com/svg?repos=tuyn53/Mira-Harness&type=Date" alt="Star History Chart" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MiraWorkspace/Mira-Harness&type=Date&theme=dark" />
+    <img src="https://api.star-history.com/svg?repos=MiraWorkspace/Mira-Harness&type=Date" alt="Star History Chart" width="600" />
   </picture>
 </a>
 

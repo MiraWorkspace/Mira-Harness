@@ -95,4 +95,22 @@ describe('application SDK dispatch', () => {
     await expect(dispatcher.invoke(session, 1, 'files.read', { path: 'test' })).rejects.toThrow('权限')
     runtime.close()
   })
+
+  it('fetches icons only for an approved Workbench and rechecks authorization on completion', async () => {
+    const { runtime, app, services, session: otherSession } = fixture()
+    const reader = vi.fn(async () => 'data:image/png;base64,AQID')
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, workbenchSiteIcon: reader })
+    await expect(dispatcher.invoke(otherSession, 1, 'workbench.fetchSiteIcon', { url: 'https://example.com/' })).rejects.toThrow('权限')
+    expect(reader).not.toHaveBeenCalled()
+    app.id = 'mira-workbench'; app.requiredCapabilities = [...app.requiredCapabilities, 'workbench:manage']
+    runtime.approve(app.id, app.installationId, app.requiredCapabilities)
+    const session = runtime.open(app.id, 1)
+    expect(await dispatcher.invoke(session, 1, 'workbench.fetchSiteIcon', { url: 'https://example.com/' })).toBe('data:image/png;base64,AQID')
+    let finish!: (value: string) => void
+    reader.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const request = dispatcher.invoke(session, 1, 'workbench.fetchSiteIcon', { url: 'https://example.com/' })
+    runtime.revokeApproval(app.id); finish('data:image/png;base64,AQID')
+    await expect(request).rejects.toThrow('授权无效')
+    runtime.close()
+  })
 })

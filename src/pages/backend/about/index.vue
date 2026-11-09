@@ -59,10 +59,10 @@ import paymentCode from '@/asset/paymentCode.jpg'
 import SettingsPageShell from '../settings/components/SettingsPageShell.vue'
 
 const appVersion = __MIRA_VERSION__
-const repositoryUrl = 'https://github.com/ChatWw/Mira-Harness'
+const repositoryUrl = 'https://github.com/MiraWorkspace/Mira-Harness'
 const releasesUrl = `${repositoryUrl}/releases`
 // GitHub Issue 模板选择页，与 .github/ISSUE_TEMPLATE/（bug_report / feature_request / install_problem）对应
-const issueUrl = 'https://github.com/ChatWw/Mira-Harness/issues/new/choose'
+const issueUrl = 'https://github.com/MiraWorkspace/Mira-Harness/issues/new/choose'
 </script>
 
 <style scoped lang="scss">

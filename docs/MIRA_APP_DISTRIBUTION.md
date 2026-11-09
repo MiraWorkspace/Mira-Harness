@@ -65,7 +65,7 @@ https://github.com/OWNER/REPO/releases/download/apps-catalog/apps-catalog.json
 
 也接受 `https://github.com/OWNER/REPO/releases/latest/download/apps-catalog.json`，但 latest 指向的每个正式 Release 都必须带该附件，因此固定 tag 更易管理。JSON 内各应用的发布包地址可以指向不同仓库的版本 Release。当前仅支持公开目录，不配置 GitHub 令牌。
 
-应用扩展页不向用户提供目录地址或本地目录操作控件。默认目录地址为 `https://github.com/tuyn53/Mira-Harness/releases/download/apps-catalog/apps-catalog.json`，已有非空来源配置继续沿用。进入该页自动请求，也可点击“检查更新”重试。请求失败或没有读取到列表时统一显示缺省状态，不显示错误、缓存提示或示例规划数据；服务仍保留有效缓存供后续读取。
+应用扩展页不向用户提供目录地址或本地目录操作控件。默认目录地址为 `https://github.com/MiraWorkspace/Mira-Harness/releases/download/apps-catalog/apps-catalog.json`，已有非空来源配置继续沿用。进入该页自动请求，也可点击“检查更新”重试。请求失败或没有读取到列表时统一显示缺省状态，不显示错误、缓存提示或示例规划数据；服务仍保留有效缓存供后续读取。
 
 请求限时 12 秒，目录最大 1 MB，应用与每个应用版本数各最多 100。非 GitHub Release JSON URL、错误 HTTP 状态、HTML、无效 JSON 和不符合协议的数据均不替换有效缓存。最近成功的目录保存在 `~/.mira/config/apps-catalog-cache.json`；请求失败时仅回退到同一来源的缓存，不混用其他来源。缓存与目录元数据不代表发布包已验证或安装。
 

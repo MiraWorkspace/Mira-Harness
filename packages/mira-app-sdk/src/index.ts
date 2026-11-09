@@ -104,6 +104,7 @@ export class MiraAppSdk {
   readonly notifications = { send: (request: NotificationRequest) => this.request<void>('notifications.send', request) }
   readonly workbench = {
     browser: (request: WorkbenchBrowserRequest) => this.request<void>('workbench.browser', request),
+    fetchSiteIcon: (url: string) => this.request<string | null>('workbench.fetchSiteIcon', { url }),
   }
   readonly files = {
     directories: () => this.request<DirectoryGrant[]>('files.directories'),

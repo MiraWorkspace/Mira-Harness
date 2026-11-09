@@ -10,10 +10,10 @@
 
 **简体中文** · [English](README.en.md)
 
-[![Release](https://img.shields.io/github/v/release/tuyn53/Mira-Harness?style=flat-square&color=525252&include_prereleases)](https://github.com/tuyn53/Mira-Harness/releases)
+[![Release](https://img.shields.io/github/v/release/MiraWorkspace/Mira-Harness?style=flat-square&color=525252&include_prereleases)](https://github.com/MiraWorkspace/Mira-Harness/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-525252?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-525252?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/tuyn53/Mira-Harness?style=flat-square&color=525252)](https://github.com/tuyn53/Mira-Harness/stargazers)
+[![Stars](https://img.shields.io/github/stars/MiraWorkspace/Mira-Harness?style=flat-square&color=525252)](https://github.com/MiraWorkspace/Mira-Harness/stargazers)
 
 [下载](#快速开始) · [功能](#功能一览) · [架构](#架构) · [本地开发](#本地开发) · [路线图](#路线图) · [常见问题](#常见问题)
 
@@ -100,7 +100,7 @@
 
 ### 下载安装
 
-前往 [GitHub Releases](https://github.com/tuyn53/Mira-Harness/releases) 下载安装包。
+前往 [GitHub Releases](https://github.com/MiraWorkspace/Mira-Harness/releases) 下载安装包。
 
 | 平台 | 架构 | 安装包 |
 | --- | --- | --- |
@@ -239,7 +239,7 @@ third-party-licenses/  第三方许可、通知与来源记录
 - Windows：安装包需在 Windows 上构建，原生依赖需要对应平台的编译工具链
 
 ```bash
-git clone https://github.com/tuyn53/Mira-Harness.git
+git clone https://github.com/MiraWorkspace/Mira-Harness.git
 cd Mira-Harness
 npm install
 npm run dev
@@ -318,13 +318,13 @@ macOS 本机测试与正式发布的证书准备、命令和通知验收步骤�
 
 ## 参与贡献
 
-欢迎提交 [Issue](https://github.com/tuyn53/Mira-Harness/issues) 和 Pull Request。
+欢迎提交 [Issue](https://github.com/MiraWorkspace/Mira-Harness/issues) 和 Pull Request。
 
 - **报告问题**：请附上应用版本、操作系统、复现步骤，以及必要的截图或已脱敏日志。
 - **提交代码**：提交前运行 `npm run build` 与 `npm test`，并在 PR 中说明改动和验证方式。
 
-<a href="https://github.com/tuyn53/Mira-Harness/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=tuyn53/Mira-Harness" alt="Contributors" />
+<a href="https://github.com/MiraWorkspace/Mira-Harness/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=MiraWorkspace/Mira-Harness" alt="Contributors" />
 </a>
 
 ## 致谢
@@ -333,10 +333,10 @@ Mira 使用了许多优秀的开源项目，包括 [Electron](https://www.electr
 
 ## Star History
 
-<a href="https://star-history.com/#tuyn53/Mira-Harness&Date">
+<a href="https://star-history.com/#MiraWorkspace/Mira-Harness&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=tuyn53/Mira-Harness&type=Date&theme=dark" />
-    <img src="https://api.star-history.com/svg?repos=tuyn53/Mira-Harness&type=Date" alt="Star History Chart" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=MiraWorkspace/Mira-Harness&type=Date&theme=dark" />
+    <img src="https://api.star-history.com/svg?repos=MiraWorkspace/Mira-Harness&type=Date" alt="Star History Chart" width="600" />
   </picture>
 </a>
 

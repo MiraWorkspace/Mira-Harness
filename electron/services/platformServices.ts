@@ -1,6 +1,7 @@
 import { PlatformDatabase } from '../storage/database'
 import { LocalMicroAppServer } from '../adapters/localMicroAppServer'
 import { readWorkbenchLegacySites } from './workbenchLegacyData'
+import { fetchWorkbenchSiteIcon } from './workbenchSiteIcon'
 import { legacyDataCleared } from './workbenchLegacyPolicy'
 import { MiraApps } from './miraApps'
 import { version as shellVersion } from '../../package.json'
@@ -115,6 +116,7 @@ export async function createPlatformServices({ miraPaths, publishHarnessEvent }:
     getTheme: appTheme, generate: input => appModels.generate(input), notify: input => appNotifications.notify(input),
     readLegacyWorkbenchSites: id => legacyDataCleared(database.getSnapshot().preferences, id) ? Promise.resolve(null) : readWorkbenchLegacySites(id, localMicroAppServer.port, legacyPort),
     workbenchBrowser: (ownerId, input) => appViews.workbenchBrowser(ownerId, input),
+    workbenchSiteIcon: url => fetchWorkbenchSiteIcon(url, (input, init) => net.fetch(input, init)),
     files: async (appId, ownerId, method, input, authorize) => {
       if (method === 'files.directories') return appFiles.directories(appId)
       if (method === 'files.read') return appFiles.read(appId, input as never)

@@ -20,7 +20,9 @@ const sdk = await connectMiraApp()
 const context = await sdk.context.get()
 ```
 
-SDK 源码位于 `packages/mira-app-sdk`；执行 `npm --prefix packages/mira-app-sdk run build` 后打包。SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。旧 Workbench 包需要随新 SDK 重新构建，不能继续调用被移除的接口。
+SDK 源码位于 `packages/mira-app-sdk`，已配置为可发布到 npm 的公共包；正式发布后，子应用执行 `npm install @mira/app-sdk@0.2.0` 即可使用，无需本地路径依赖。维护者在 SDK 目录执行 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建 JavaScript 和类型声明，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
+
+SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。旧 Workbench 包需要随新 SDK 重新构建，不能继续调用被移除的接口。
 
 ## 底层能力
 

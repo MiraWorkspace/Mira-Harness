@@ -59,4 +59,42 @@ describe('Workbench browser views', () => {
     expect(() => browser.setLayout('one', { x: NaN, y: 0, width: 1, height: 1 }, true)).toThrow('尺寸')
     browser.dispose()
   })
+
+  it('navigates an existing tab without replacing its view or history', () => {
+    const { browser, owner } = fixture()
+    browser.open('one', 'https://example.com/')
+    const view = mock.views[0]
+    browser.open('one', 'https://example.com/next')
+    expect(mock.views).toHaveLength(1)
+    expect(owner.contentView.addChildView).toHaveBeenCalledOnce()
+    expect(view.webContents.loadURL).toHaveBeenLastCalledWith('https://example.com/next')
+    browser.control('one', 'back')
+    expect(view.webContents.navigationHistory.goBack).toHaveBeenCalledOnce()
+    expect(() => browser.open('one', 'file:///private')).toThrow('地址')
+    expect(view.webContents.loadURL).toHaveBeenCalledTimes(2)
+    browser.dispose()
+  })
+
+  it('reports the newly requested URL when navigation in an existing tab fails', async () => {
+    const { browser, app } = fixture()
+    browser.open('one', 'https://example.com/')
+    mock.views[0].webContents.loadURL.mockRejectedValueOnce(new Error('offline'))
+    browser.open('one', 'https://example.com/unavailable')
+    await Promise.resolve()
+    expect(app.send).toHaveBeenLastCalledWith('mira-app:browser-event', expect.objectContaining({ tabId: 'one', url: 'https://example.com/unavailable', error: '网页加载失败' }))
+    browser.dispose()
+  })
+
+  it('ignores an interrupted load after a newer address has been submitted', async () => {
+    const { browser, app } = fixture()
+    browser.open('one', 'https://example.com/')
+    let rejectLoad!: (error: Error) => void
+    mock.views[0].webContents.loadURL.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectLoad = reject }))
+    browser.open('one', 'https://example.com/slow')
+    browser.open('one', 'https://example.com/new')
+    rejectLoad(new Error('ERR_ABORTED'))
+    await Promise.resolve()
+    expect(app.send).not.toHaveBeenCalled()
+    browser.dispose()
+  })
 })

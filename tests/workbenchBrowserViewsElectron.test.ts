@@ -43,8 +43,10 @@ app.whenReady().then(async () => {
   const wait = async fn => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 20)) } throw Error('timeout') }
   await wait(() => guest.getTitle() === 'Loaded page' && !guest.isLoading() && guest.navigationHistory.length() > 0)
   const title = guest.getTitle(), partition = guest.session === session.fromPartition('persist:mira-workbench')
-  await guest.executeJavaScript('document.querySelector("a").click()', true)
+  const guestId = guest.id
+  browser.open('one', 'http://127.0.0.1:' + server.address().port + '/next')
   await wait(() => guest.getURL().endsWith('/next'))
+  if (guest.id !== guestId || owner.contentView.children.filter(child => child.webContents?.session === session.fromPartition('persist:mira-workbench')).length !== 1) throw Error('Navigation replaced or duplicated the browser view')
   await wait(() => guest.navigationHistory.canGoBack())
   browser.control('one', 'back')
   await wait(() => guest.getURL().endsWith('/'))

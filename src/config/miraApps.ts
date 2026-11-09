@@ -1,6 +1,6 @@
 import type { PlatformSnapshot } from '@/types'
 
-export const DEFAULT_APPS_CATALOG_URL = 'https://github.com/tuyn53/Mira-Harness/releases/download/apps-catalog/apps-catalog.json'
+export const DEFAULT_APPS_CATALOG_URL = 'https://github.com/MiraWorkspace/Mira-Harness/releases/download/apps-catalog/apps-catalog.json'
 
 export interface AppCompatibility { minShellVersion: string; platformApi: { major: number; minor: number } }
 export interface LocalAppManifest {

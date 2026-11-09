@@ -7,6 +7,7 @@ interface AppSdkServices {
   notify(input: { appId: string; title: string; body?: string }): Promise<void>
   readLegacyWorkbenchSites?(appId: string): Promise<string | null>
   workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void
+  workbenchSiteIcon?(url: string): Promise<string | null>
   files?(appId: string, ownerId: number, method: string, input: Record<string, unknown>, authorize: () => void): Promise<unknown> | unknown
   views?(appId: string, ownerId: number, input: Record<string, unknown>): unknown
   legacyMiniapps?(appId: string, input: Record<string, unknown>): Promise<unknown> | unknown
@@ -49,6 +50,13 @@ export class AppSdkDispatcher {
       const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
       if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchBrowser) throw new Error('应用没有所需权限')
       return this.services.workbenchBrowser(ownerId, record(params))
+    }
+    if (method === 'workbench.fetchSiteIcon') {
+      const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
+      if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchSiteIcon) throw new Error('应用没有所需权限')
+      const value = await this.services.workbenchSiteIcon(text(record(params).url, 8192)!)
+      this.runtime.authorize(sessionId, ownerId, 'workbench:manage')
+      return value
     }
     if (method.startsWith('files.')) {
       const context = this.runtime.authorize(sessionId, ownerId, 'files:app')
