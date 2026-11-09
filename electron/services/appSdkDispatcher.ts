@@ -6,7 +6,7 @@ interface AppSdkServices {
   generate(input: { appId: string; prompt: string; providerId?: string; modelId?: string }): Promise<{ text: string }>
   notify(input: { appId: string; title: string; body?: string }): Promise<void>
   readLegacyWorkbenchSites?(appId: string): Promise<string | null>
-  workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void
+  workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void | Promise<void>
   workbenchSiteIcon?(url: string): Promise<string | null>
   files?(appId: string, ownerId: number, method: string, input: Record<string, unknown>, authorize: () => void): Promise<unknown> | unknown
   views?(appId: string, ownerId: number, input: Record<string, unknown>): unknown

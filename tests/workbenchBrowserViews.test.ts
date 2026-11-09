@@ -1,15 +1,16 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mock = vi.hoisted(() => ({ views: [] as any[] }))
+const mock = vi.hoisted(() => ({ views: [] as any[], nextLoad: undefined as (() => Promise<void>) | undefined, openExternal: vi.fn(async () => undefined) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
-  return { WebContentsView: class {
+  return { shell: { openExternal: mock.openExternal }, WebContentsView: class {
     webContents: any
     setBounds = vi.fn()
     constructor(public options: unknown) {
       const navigationHistory = { canGoBack: vi.fn(() => true), canGoForward: vi.fn(() => false), goBack: vi.fn(), goForward: vi.fn() }
       this.webContents = Object.assign(new EventEmitter(), { navigationHistory, session: { setPermissionRequestHandler: vi.fn() }, setWindowOpenHandler: vi.fn(), getURL: () => 'https://example.com/', getTitle: () => 'Example', isLoading: () => false, isDestroyed: () => false, loadURL: vi.fn(async () => undefined), close: vi.fn(), reload: vi.fn(), stop: vi.fn() })
+      if (mock.nextLoad) { this.webContents.loadURL.mockImplementationOnce(mock.nextLoad); mock.nextLoad = undefined }
       mock.views.push(this)
     }
   } }
@@ -21,9 +22,20 @@ function fixture() {
   const app = { isDestroyed: () => false, send: vi.fn() }
   return { owner, app, browser: new WorkbenchBrowserViews(owner as never, app as never) }
 }
-beforeEach(() => { mock.views.length = 0 })
+beforeEach(() => { mock.views.length = 0; mock.nextLoad = undefined; mock.openExternal.mockClear() })
 
 describe('Workbench browser views', () => {
+  it('opens only the current validated tab URL in the system browser', async () => {
+    const { browser } = fixture()
+    browser.open('one', 'https://example.com/')
+    mock.views[0].webContents.getURL = () => 'https://example.com/redirected'
+    await browser.control('one', 'external')
+    expect(mock.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/redirected')
+    mock.views[0].webContents.getURL = () => 'file:///private'
+    expect(() => browser.control('one', 'external')).toThrow('地址')
+    expect(mock.openExternal).toHaveBeenCalledTimes(1)
+    browser.dispose()
+  })
   it('bounds, controls and disposes tabs belonging to the application view', () => {
     const { browser, owner, app } = fixture()
     browser.setAppBounds({ x: 10, y: 20, width: 800, height: 600 })
@@ -95,6 +107,24 @@ describe('Workbench browser views', () => {
     rejectLoad(new Error('ERR_ABORTED'))
     await Promise.resolve()
     expect(app.send).not.toHaveBeenCalled()
+    browser.dispose()
+  })
+
+  it.each(['initial', 'existing'])('keeps the page visible when stopping an %s load', async mode => {
+    const { browser, app } = fixture()
+    let rejectLoad!: (error: Error) => void
+    if (mode === 'initial') {
+      mock.nextLoad = () => new Promise((_resolve, reject) => { rejectLoad = reject })
+      browser.open('one', 'https://example.com/')
+    } else {
+      browser.open('one', 'https://example.com/')
+      mock.views[0].webContents.loadURL.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectLoad = reject }))
+      browser.open('one', 'https://example.com/next')
+    }
+    browser.control('one', 'stop')
+    rejectLoad(Object.assign(new Error('ERR_ABORTED (-3)'), { code: 'ERR_ABORTED', errno: -3 }))
+    await Promise.resolve()
+    expect(app.send).not.toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ error: expect.anything() }))
     browser.dispose()
   })
 })

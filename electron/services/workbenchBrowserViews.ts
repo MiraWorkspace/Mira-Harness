@@ -1,4 +1,4 @@
-import { WebContentsView, type BrowserWindow, type WebContents } from 'electron'
+import { shell, WebContentsView, type BrowserWindow, type WebContents } from 'electron'
 import { WORKBENCH_BROWSER_PARTITION, configureWorkbenchPopupHandling, isAllowedHostedBrowserUrl } from '../security/hostedBrowser'
 import { bindAppViewShortcuts } from './appViewShortcuts'
 
@@ -27,7 +27,7 @@ export class WorkbenchBrowserViews {
     const existing = this.tabs.get(tabId)
     if (existing) {
       existing.requestedUrl = value; existing.error = undefined; existing.faviconUrl = null
-      void existing.view.webContents.loadURL(value).catch(() => { if (this.tabs.get(tabId) === existing && existing.requestedUrl === value && !existing.error) { existing.error = '网页加载失败'; this.state(tabId) } })
+      void existing.view.webContents.loadURL(value).catch(error => { if (error.code !== 'ERR_ABORTED' && this.tabs.get(tabId) === existing && existing.requestedUrl === value && !existing.error) { existing.error = '网页加载失败'; this.state(tabId) } })
       return
     }
     if (this.tabs.size >= 32) throw new Error('浏览器标签过多')
@@ -53,13 +53,18 @@ export class WorkbenchBrowserViews {
     this.owner.contentView.addChildView(view)
     this.viewAdded()
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 })
-    void contents.loadURL(value).catch(() => { if (this.tabs.get(tabId) === tab && tab.requestedUrl === value && !tab.error) { tab.error = '网页加载失败'; this.state(tabId) } })
+    void contents.loadURL(value).catch(error => { if (error.code !== 'ERR_ABORTED' && this.tabs.get(tabId) === tab && tab.requestedUrl === value && !tab.error) { tab.error = '网页加载失败'; this.state(tabId) } })
     this.sync()
   }
 
   control(tabId: string, action: string) {
     const tab = this.tab(tabId), contents = tab.view.webContents, history = contents.navigationHistory
     if (action === 'close') { this.close(tabId); return }
+    if (action === 'external') {
+      const url = tab.error ? tab.requestedUrl : contents.getURL() || tab.requestedUrl
+      if (!isAllowedHostedBrowserUrl(url) || url.length > 8192) throw new Error('网页地址无效')
+      return shell.openExternal(url)
+    }
     if (action === 'back') { if (history.canGoBack()) history.goBack() }
     else if (action === 'forward') { if (history.canGoForward()) history.goForward() }
     else if (action === 'reload') contents.reload()
