@@ -162,6 +162,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
+    "@mira/app-sdk": "git+https://github.com/MiraWorkspace/Mira-App-SDK.git#7c683a0bdc0ba57e6e7ebc715a1bac5812801281",
     "@types/better-sqlite3": "^9.6.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.1.1",

@@ -36,7 +36,7 @@ export { LegacyWorkbenchMiniapps } from './electron/services/legacyWorkbenchMini
 export { zipSync, strToU8 } from 'fflate'
 `
 const childApp = `
-import { connectMiraApp } from './packages/mira-app-sdk/src/index'
+import { connectMiraApp } from '@mira/app-sdk'
 const sdk = await connectMiraApp()
 window.testSdk = sdk
 const context = await sdk.context.get()

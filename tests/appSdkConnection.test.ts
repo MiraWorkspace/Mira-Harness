@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppRuntime, type InstalledPlatformApp } from '../electron/services/appRuntime'
 import { AppSdkDispatcher } from '../electron/services/appSdkDispatcher'
 import { AppSdkConnection } from '../electron/services/appSdkConnection'
-import { MiraAppSdk } from '../packages/mira-app-sdk/src/index'
+import { MiraAppSdk } from '@mira/app-sdk'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })

@@ -20,7 +20,9 @@ const sdk = await connectMiraApp()
 const context = await sdk.context.get()
 ```
 
-SDK 源码位于 `packages/mira-app-sdk`，已配置为可发布到 npm 的公共包；正式发布后，子应用执行 `npm install @mira/app-sdk@0.2.0` 即可使用，无需本地路径依赖。维护者在 SDK 目录执行 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建 JavaScript 和类型声明，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
+SDK 源码已迁至独立仓库 [Mira-App-SDK](https://github.com/MiraWorkspace/Mira-App-SDK)，不再包含于 Harness 的 `packages` 中。npm 首次发布前，子应用可执行 `npm install github:MiraWorkspace/Mira-App-SDK#v0.2.0`，仍从 `@mira/app-sdk` 导入；GitHub 安装会自动构建 JavaScript 与类型声明，需要开发环境提供 Node.js、npm 和 Git。Harness 的宿主集成测试通过开发依赖使用独立 SDK，并锁定具体 Git 提交，不依赖相邻本地目录。
+
+SDK 已配置为可发布到 npm 的公共包；正式发布后，子应用可改用 `npm install @mira/app-sdk@0.2.0`。维护者在独立 SDK 项目中执行 `npm ci`、`npm test` 和 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
 
 SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。旧 Workbench 包需要随新 SDK 重新构建，不能继续调用被移除的接口。
 
