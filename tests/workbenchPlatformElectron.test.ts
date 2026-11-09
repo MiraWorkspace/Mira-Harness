@@ -10,9 +10,9 @@ import { expect, it } from 'vitest'
 it('hosts miniapps in Workbench over generic file/view SDKs with independent storage and revocable permissions', async () => {
   const root = resolve('.'), workbench = resolve('../Mira-Workbench'), temp = await mkdtemp(join(tmpdir(), 'workbench-owned-e2e-'))
   try {
-    await promisify(execFile)('npm', ['run', 'build'], { cwd: workbench, timeout: 30000 })
+    await promisify(execFile)(process.execPath, [resolve(workbench, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: workbench, timeout: 30000 })
     await build({ stdin: { contents: entry, resolveDir: root, loader: 'ts' }, outfile: join(temp, 'platform.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'], plugins: [{ name: 'native-sqlite', setup: builder => builder.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: createRequire(import.meta.url).resolve('better-sqlite3'), external: true })) }] })
-    await build({ stdin: { contents: childApp, resolveDir: root, loader: 'ts' }, outfile: join(temp, 'child.js'), bundle: true, format: 'esm' })
+    await build({ stdin: { contents: childApp, resolveDir: workbench, loader: 'ts' }, outfile: join(temp, 'child.js'), bundle: true, format: 'esm' })
     await writeFile(join(temp, 'main.cjs'), main)
     const env = { ...process.env, NODE_PATH: join(root, 'node_modules'), WORKBENCH_DIST: join(workbench, 'dist'), APP_PRELOAD: join(root, 'electron/preload/appHost.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
     const { stdout, stderr } = await promisify(execFile)(createRequire(import.meta.url)('electron'), [join(temp, 'main.cjs')], { env, timeout: 45000 })
