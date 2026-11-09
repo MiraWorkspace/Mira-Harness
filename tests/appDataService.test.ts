@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,10 +12,33 @@ function fixture() {
     ['first', { id: 'first', enabled: true, installationId: 'version-1', approvedCapabilities: ['storage:app'] }],
     ['second', { id: 'second', enabled: true, installationId: 'version-1', approvedCapabilities: ['storage:app'] }],
   ])
-  return { apps, service: new AppDataService(root, id => apps.get(id)) }
+  return { root, apps, service: new AppDataService(root, id => apps.get(id)) }
 }
 
 describe('app data sessions', () => {
+  it('isolates namespaces by parent and clears them after reopening the service', () => {
+    const { root, apps, service } = fixture()
+    const first = service.issue('first', 10), second = service.issue('second', 11)
+    const migration = [{ version: 1, tables: [{ name: 'items', columns: [{ name: 'id', type: 'TEXT' as const }] }] }]
+    service.migrate(first, 10, migration, 'notes'); service.migrate(first, 10, migration, 'other'); service.migrate(second, 11, migration, 'notes')
+    service.transaction(first, 10, [{ type: 'insert', table: 'items', values: { id: 'private' } }], 'notes')
+    expect(service.transaction(first, 10, [{ type: 'select', table: 'items' }], 'other')).toEqual([[]])
+    expect(service.transaction(second, 11, [{ type: 'select', table: 'items' }], 'notes')).toEqual([[]])
+    expect(() => service.migrate(first, 10, [], '../notes')).toThrow('命名空间')
+    service.revokeApp('first')
+    expect(() => service.transaction(first, 10, [], 'notes')).toThrow('授权无效')
+    const session = service.issue('first', 10)
+    expect(service.transaction(session, 10, [{ type: 'select', table: 'items' }], 'notes')).toEqual([[{ id: 'private' }]])
+    service.close()
+    const reopened = new AppDataService(root, id => apps.get(id))
+    reopened.clearApp('first')
+    expect(readdirSync(root).filter(name => name.endsWith('.sqlite'))).toHaveLength(1)
+    const next = reopened.issue('first', 10)
+    reopened.migrate(next, 10, migration, 'notes')
+    expect(reopened.transaction(next, 10, [{ type: 'select', table: 'items' }], 'notes')).toEqual([[]])
+    reopened.close()
+  })
+
   it('binds data access to the installed application and owner', () => {
     const { service } = fixture()
     const first = service.issue('first', 10), second = service.issue('second', 10)

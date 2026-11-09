@@ -22,7 +22,7 @@ function fixture() {
 describe('application SDK dispatch', () => {
   it('uses session identity for storage and approved capabilities', async () => {
     const { runtime, dispatcher, session, services } = fixture()
-    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 1 } })
+    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 2 } })
     await dispatcher.invoke(session, 1, 'storage.migrate', { migrations: [{ version: 1, tables: [{ name: 'items', columns: [{ name: 'id', type: 'TEXT' }] }] }] })
     await dispatcher.invoke(session, 1, 'storage.transaction', { operations: [{ type: 'insert', table: 'items', values: { id: 'saved' } }] })
     expect(await dispatcher.invoke(session, 1, 'appearance.get')).toBe('dark')
@@ -89,31 +89,10 @@ describe('application SDK dispatch', () => {
     runtime.close()
   })
 
-  it('does not return a miniapp review after the Workbench authorization is revoked', async () => {
-    const { runtime, app, services } = fixture()
-    app.id = 'mira-workbench'; app.requiredCapabilities = [...app.requiredCapabilities, 'workbench:manage']
-    runtime.approve(app.id, app.installationId, app.requiredCapabilities)
-    const session = runtime.open(app.id, 1)
-    let finish!: (approved: boolean) => void
-    const dispatcher = new AppSdkDispatcher(runtime, { ...services, reviewWorkbenchApp: () => new Promise(resolve => { finish = resolve }) })
-    const pending = dispatcher.invoke(session, 1, 'workbench.review', { appId: 'sample' })
-    runtime.revokeApproval(app.id); finish(true)
-    await expect(pending).rejects.toThrow('授权无效')
-    runtime.close()
-  })
-
-  it('prevents a pending management action after the Workbench grant is revoked', async () => {
-    const { runtime, app, services } = fixture()
-    app.id = 'mira-workbench'; app.requiredCapabilities = [...app.requiredCapabilities, 'workbench:manage']
-    runtime.approve(app.id, app.installationId, app.requiredCapabilities)
-    const session = runtime.open(app.id, 1)
-    let finish!: () => void
-    const mutate = vi.fn()
-    const dispatcher = new AppSdkDispatcher(runtime, { ...services, manageWorkbenchApp: async (_owner, _action, _id, authorize) => { await new Promise<void>(resolve => { finish = resolve }); authorize(); mutate(); return true } })
-    const pending = dispatcher.invoke(session, 1, 'workbench.uninstall', { appId: 'sample' })
-    runtime.revokeApproval(app.id); finish()
-    await expect(pending).rejects.toThrow('授权无效')
-    expect(mutate).not.toHaveBeenCalled()
+  it('rejects removed Workbench lifecycle methods and exposes generic services only with capabilities', async () => {
+    const { runtime, dispatcher, session } = fixture()
+    await expect(dispatcher.invoke(session, 1, 'workbench.install')).rejects.toThrow('不支持')
+    await expect(dispatcher.invoke(session, 1, 'files.read', { path: 'test' })).rejects.toThrow('权限')
     runtime.close()
   })
 })

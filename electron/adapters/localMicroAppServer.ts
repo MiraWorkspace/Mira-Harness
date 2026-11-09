@@ -59,6 +59,7 @@ export interface LocalMicroAppServerOptions {
 
 export class LocalMicroAppServer {
   private readonly roots = new Map<string, string>()
+  private readonly resourceRoots = new Map<string, string>()
   private readonly builtinRoots: Record<string, string>
   private server?: Server
   private _port?: number
@@ -169,6 +170,14 @@ export class LocalMicroAppServer {
     return root
   }
 
+  mountResource(id: string, directory: string, entry: string) {
+    this.resourceRoots.set(id, this.validateDirectory(directory, entry))
+    if (!this._port) throw new Error('本地资源服务不可用')
+    return `http://127.0.0.1:${this._port}/apps/${id}/${entry.split('/').map(encodeURIComponent).join('/')}`
+  }
+
+  unmountResource(id: string) { this.resourceRoots.delete(id) }
+
   getEntryUrl(appId: string) {
     if (!this._port) throw new Error('本地微应用服务尚未启动')
     if (!this.roots.has(appId)) throw new Error('本地微应用入口不可用，请检查已选目录')
@@ -217,7 +226,7 @@ export class LocalMicroAppServer {
       response.writeHead(405, corsHeadersFor(request)).end()
       return
     }
-    const root = this.roots.get(appId)
+    const root = this.resourceRoots.get(appId) ?? this.roots.get(appId)
     if (!root) {
       response.writeHead(404, corsHeadersFor(request)).end()
       return

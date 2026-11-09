@@ -50,8 +50,8 @@ export class AppRuntime {
     return this.data.issue(id, ownerId)
   }
 
-  migrate(sessionId: string, ownerId: number, migrations: AppMigration[]) { return this.data.migrate(sessionId, ownerId, migrations) }
-  transaction(sessionId: string, ownerId: number, operations: AppDataOperation[]) { return this.data.transaction(sessionId, ownerId, operations) }
+  migrate(sessionId: string, ownerId: number, migrations: AppMigration[], namespace?: string) { return this.data.migrate(sessionId, ownerId, migrations, namespace) }
+  transaction(sessionId: string, ownerId: number, operations: AppDataOperation[], namespace?: string) { return this.data.transaction(sessionId, ownerId, operations, namespace) }
   authorize(sessionId: string, ownerId: number, capability?: string) { return this.data.authorize(sessionId, ownerId, capability) }
   revokeSession(sessionId: string, ownerId: number) { return this.data.revoke(sessionId, ownerId) }
   revokeOwner(ownerId: number) { this.data.revokeOwner(ownerId) }

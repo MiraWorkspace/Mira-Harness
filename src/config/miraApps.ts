@@ -27,7 +27,7 @@ export interface AppRelease {
 }
 export interface CatalogApp { id: string; name: string; description: string; repository: string; icon?: string; releases: AppRelease[] }
 export interface AppsCatalog { schemaVersion: 1; revision: number; publishedAt: string; example?: boolean; notice?: string; apps: CatalogApp[] }
-export interface InstalledApp { miniapp?: boolean; id: string; name: string; version?: string; description?: string; iconUrl?: string; test: boolean; enabled: boolean; directory: string; error?: string; updateError?: string }
+export interface InstalledApp { id: string; name: string; version?: string; description?: string; iconUrl?: string; test: boolean; enabled: boolean; directory: string; error?: string; updateError?: string }
 export interface AppsState { directory: string; installed: InstalledApp[]; blocked?: string[]; pendingRestart: { id: string; action: 'install' | 'uninstall' }[]; catalog?: AppsCatalog; catalogUrl: string; checkedAt?: string; cached: boolean; catalogError?: string; snapshot: PlatformSnapshot }
 
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -66,7 +66,7 @@ function compatibility(value: unknown) {
 }
 export function appCompatibilityError(value: AppCompatibility, shellVersion: string): string | undefined {
   if (compareAppVersions(shellVersion, value.minShellVersion) < 0) return `需要 Mira ${value.minShellVersion} 或更新版本`
-  if (value.platformApi.major !== 1 || value.platformApi.minor > 1) return '当前 Mira 不支持此应用要求的平台 API'
+  if (value.platformApi.major !== 1 || value.platformApi.minor > 2) return '当前 Mira 不支持此应用要求的平台 API'
 }
 export function parseLocalAppManifest(value: unknown): LocalAppManifest {
   const item = record(value)

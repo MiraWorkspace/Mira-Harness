@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto'
-import { lstatSync, rmSync } from 'node:fs'
+import { randomBytes, createHash } from 'node:crypto'
+import { lstatSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { AppDatabase, type AppDataOperation, type AppMigration } from '../storage/appDatabase'
 
@@ -15,6 +15,12 @@ interface AppSession {
   installationId: string
   ownerId: number
   capabilities: ReadonlySet<string>
+}
+
+const namespacePrefix = (appId: string) => 'scope-' + createHash('sha256').update(appId).digest('hex').slice(0, 24) + '-'
+export function namespaceDatabaseId(appId: string, namespace: string) {
+  if (typeof namespace !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(namespace)) throw new Error('数据命名空间无效')
+  return namespacePrefix(appId) + createHash('sha256').update(namespace).digest('hex').slice(0, 32)
 }
 
 /** The caller must authenticate the host frame before issuing or using a session. */
@@ -48,18 +54,21 @@ export class AppDataService {
     return { appId: session.appId, capabilities: [...session.capabilities].filter(item => app.approvedCapabilities.includes(item)) }
   }
 
-  private database(appId: string) {
+  private database(appId: string, namespace?: string) {
+    if (namespace !== undefined) {
+      appId = namespaceDatabaseId(appId, namespace)
+    }
     let database = this.databases.get(appId)
     if (!database) { database = new AppDatabase(this.root, appId); this.databases.set(appId, database) }
     return database
   }
 
-  migrate(sessionId: string, ownerId: number, migrations: AppMigration[]) {
-    return this.database(this.authorize(sessionId, ownerId, 'storage:app').appId).migrate(migrations)
+  migrate(sessionId: string, ownerId: number, migrations: AppMigration[], namespace?: string) {
+    return this.database(this.authorize(sessionId, ownerId, 'storage:app').appId, namespace).migrate(migrations)
   }
 
-  transaction(sessionId: string, ownerId: number, operations: AppDataOperation[]) {
-    return this.database(this.authorize(sessionId, ownerId, 'storage:app').appId).transaction(operations)
+  transaction(sessionId: string, ownerId: number, operations: AppDataOperation[], namespace?: string) {
+    return this.database(this.authorize(sessionId, ownerId, 'storage:app').appId, namespace).transaction(operations)
   }
 
   revoke(sessionId: string, ownerId: number) {
@@ -69,8 +78,9 @@ export class AppDataService {
 
   revokeApp(appId: string) {
     for (const [id, session] of this.sessions) if (session.appId === appId) this.sessions.delete(id)
-    this.databases.get(appId)?.close()
-    this.databases.delete(appId)
+    for (const [id, database] of this.databases) if (id === appId || id.startsWith(namespacePrefix(appId))) {
+      database.close(); this.databases.delete(id)
+    }
   }
 
   clearApp(appId: string) {
@@ -79,11 +89,12 @@ export class AppDataService {
     const root = lstatSync(this.root, { throwIfNoEntry: false })
     if (!root) return
     if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('应用数据目录无效')
-    for (const suffix of ['', '-wal', '-shm', '-journal']) {
-      const file = join(this.root, `${appId}.sqlite${suffix}`), info = lstatSync(file, { throwIfNoEntry: false })
+    const names = readdirSync(this.root).filter(name => ['', '-wal', '-shm', '-journal'].some(suffix => name === `${appId}.sqlite${suffix}`) || (name.startsWith(namespacePrefix(appId)) && /^[a-z0-9-]+\.sqlite(?:-(?:wal|shm|journal))?$/.test(name)))
+    for (const name of names) {
+      const file = join(this.root, name), info = lstatSync(file, { throwIfNoEntry: false })
       if (info && (!info.isFile() || info.isSymbolicLink())) throw new Error('应用数据库路径无效')
     }
-    for (const suffix of ['-wal', '-shm', '-journal', '']) rmSync(join(this.root, `${appId}.sqlite${suffix}`), { force: true })
+    for (const name of names) rmSync(join(this.root, name), { force: true })
   }
 
   revokeOwner(ownerId: number) {

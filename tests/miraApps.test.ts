@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { compareAppVersions, compatibleAppRelease, parseAppsCatalog, parseLocalAppManifest, validateCatalogUrl } from '../src/config/miraApps'
 import { MiraPaths } from '../electron/storage/miraPaths'
 import { LocalMicroAppServer } from '../electron/adapters/localMicroAppServer'
-import { MiraApps, inspectMiniappPackage } from '../electron/services/miraApps'
+import { MiraApps } from '../electron/services/miraApps'
 import { AppRuntime } from '../electron/services/appRuntime'
 import { microApps } from '../src/config/microApps'
 import { applications, applyPlatformSnapshot } from '../src/config/runtime'
@@ -269,15 +269,7 @@ async function installCatalogPackage(f: ReturnType<typeof installationFixture>, 
 }
 
 describe('official application installation and uninstallation', () => {
-  it('validates third-party packages without accepting first-party identities', () => {
-    expect(inspectMiniappPackage(miniappBytes())).toMatchObject({ id: 'example-miniapp', requiredCapabilities: [] })
-    expect(() => inspectMiniappPackage(installationFixture().bytes)).toThrow('第三方小程序')
-    const pkg = (changes: Record<string, unknown>, files: Record<string, Uint8Array> = {}) => zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, ...changes })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo'), ...files })
-    expect(() => inspectMiniappPackage(pkg({ id: 'other-app', requiredCapabilities: ['workbench:manage'] }))).toThrow('不能申请')
-    expect(() => inspectMiniappPackage(pkg({ entry: 'missing.html' }))).toThrow('包内文件不存在')
-    expect(() => inspectMiniappPackage(pkg({}, { '../escape': strToU8('bad') }))).toThrow()
-    expect(() => inspectMiniappPackage(pkg({ test: true }))).toThrow('测试应用')
-  })
+
   it('stages a catalog update, keeps the old package until restart and preserves app data', async () => {
     const f = installationFixture()
     await installCatalogPackage(f, f.apps, f.bytes)
@@ -376,82 +368,16 @@ describe('official application installation and uninstallation', () => {
     expect(f.create().scan().installed.find(item => item.id === 'mira-workbench')?.version).toBe('0.2.0')
   })
 
-  it('retains SDK capabilities when rediscovering an installed package after restart', () => {
-    const f = fixture()
-    const id = 'sdk-test-app'
-    const requiredCapabilities = ['storage:app', 'appearance:read', 'models:generate', 'notifications:send']
-    const files = { 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, id, requiredCapabilities })), 'index.html': strToU8('<!doctype html><title>SDK test fixture</title>'), 'logo.png': strToU8('logo') }
-    const state = f.apps.installMiniapp(zipSync(files))
-    expect(state.pendingRestart).toEqual([{ id, action: 'install' }])
-    const restarted = f.create(), installed = restarted.scan()
-    expect(installed.snapshot.microApps.some(app => app.code === id)).toBe(false)
-    expect(restarted.miniapps()).toEqual([expect.objectContaining({ id, enabled: true })])
-    expect(restarted.resolvePlatformApp(id)?.firstParty).toBe(false)
-    expect(restarted.resolvePlatformApp(id)?.requiredCapabilities).toEqual(['appearance:read', 'models:generate', 'notifications:send', 'storage:app'])
-  })
-
-  it('keeps third-party installation separate from first-party discovery and debug applications', async () => {
-    const f = installationFixture()
-    const state = f.apps.installMiniapp(miniappBytes())
-    expect(state.pendingRestart).toEqual([{ id: 'example-miniapp', action: 'install' }])
-    const restarted = f.create(); restarted.scan()
-    expect(restarted.miniapps()).toEqual([expect.objectContaining({ id: 'example-miniapp', enabled: true })])
-    expect(restarted.state().installed.some(item => item.id === 'example-miniapp')).toBe(false)
-    expect(restarted.snapshot().microApps.some(item => item.code === 'example-miniapp')).toBe(false)
-    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
-    expect(restarted.resolvePlatformApp(manifest.id)?.firstParty).toBe(true)
-    expect(() => f.apps.installMiniapp(miniappBytes())).toThrow('重启')
-    const runtime = new AppRuntime(join(f.root, 'runtime-data'), { get: () => undefined, set: () => {}, delete: () => false }, id => restarted.resolvePlatformApp(id))
-    expect(() => runtime.open('example-miniapp', 1)).toThrow('尚未批准')
-    expect(runtime.authorize(runtime.open(manifest.id, 2), 2).appId).toBe(manifest.id)
-    runtime.close()
-    await restarted.refreshCatalog()
-    await restarted.install('mira-workbench')
-    expect(f.create().scan().snapshot.microApps.some(app => app.code === 'mira-workbench')).toBe(true)
-  })
-
-  it('rejects unsafe or impersonating miniapps without modifying first-party applications', () => {
-    const f = installationFixture()
-    const bad = zipSync({ 'app-manifest.json': strToU8(JSON.stringify(miniappManifest)), '../escape.html': strToU8('bad'), 'index.html': strToU8('app') })
-    expect(() => f.apps.installMiniapp(bad)).toThrow()
-    expect(readdirSync(f.paths.apps)).toEqual([manifest.id])
-    expect(existsSync(join(f.paths.root, 'escape.html'))).toBe(false)
-    const privileged = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, requiredCapabilities: ['harness:workbench'] })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo') })
-    expect(() => f.apps.installMiniapp(privileged)).toThrow('权限列表无效')
-    expect(() => f.apps.installMiniapp(f.bytes)).toThrow('第三方小程序')
-    expect(readdirSync(f.paths.apps)).toEqual([manifest.id])
-    const impersonating = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, id: 'other-app', requiredCapabilities: ['workbench:manage'] })), 'index.html': strToU8('app'), 'logo.png': strToU8('logo') })
-    expect(() => f.apps.installMiniapp(impersonating)).toThrow('不能申请')
-    const collision = join(f.paths.apps, miniappManifest.id)
-    mkdirSync(collision); writeFileSync(join(collision, 'app-manifest.json'), JSON.stringify(miniappManifest)); writeFileSync(join(collision, 'index.html'), 'first party'); writeFileSync(join(collision, 'logo.png'), 'logo')
-    expect(() => f.apps.installMiniapp(miniappBytes())).toThrow('不能替换第一方')
-    expect(readFileSync(join(collision, 'index.html'), 'utf8')).toBe('first party')
-  })
-
-  it('updates and uninstalls third-party packages within their own directory', () => {
-    const f = fixture(); f.apps.installMiniapp(miniappBytes())
-    const running = f.create(); running.scan()
-    const update = zipSync({ 'app-manifest.json': strToU8(JSON.stringify({ ...miniappManifest, version: '0.2.0' })), 'index.html': strToU8('updated'), 'logo.png': strToU8('logo') })
-    running.installMiniapp(update)
-    expect(running.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
-    const restarted = f.create(); restarted.scan()
-    expect(restarted.miniapps()[0]).toMatchObject({ id: 'example-miniapp', version: '0.2.0' })
-    expect(readFileSync(join(f.paths.apps, '.miniapps', 'example-miniapp', 'index.html'), 'utf8')).toBe('updated')
-    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
-    expect(restarted.snapshot().microApps.some(item => item.code === 'example-miniapp')).toBe(false)
-    restarted.uninstall('example-miniapp')
-    expect(existsSync(join(f.paths.apps, '.miniapps', 'example-miniapp'))).toBe(false)
-    expect(existsSync(f.directory)).toBe(true)
-    expect(restarted.miniapps()).toEqual([])
-  })
-
-  it('does not trust a miniapp claiming first-party or debug status in its manifest', () => {
-    const f = fixture(); f.apps.installMiniapp(miniappBytes())
-    const path = join(f.paths.apps, '.miniapps', 'example-miniapp', 'app-manifest.json')
-    writeFileSync(path, JSON.stringify({ ...miniappManifest, firstParty: true, test: true }))
-    const restarted = f.create(); restarted.scan()
-    expect(restarted.resolvePlatformApp('example-miniapp')?.firstParty).toBe(false)
-    expect(restarted.state().installed.some(item => item.id === 'example-miniapp')).toBe(false)
+  it('leaves Workbench legacy miniapps outside Mira installation and runtime registries', () => {
+    const f = fixture(), directory = join(f.paths.apps, '.miniapps', 'example-miniapp')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, 'app-manifest.json'), JSON.stringify(miniappManifest))
+    writeFileSync(join(directory, 'index.html'), 'legacy')
+    const state = f.apps.scan()
+    expect(state.installed.some(item => item.id === 'example-miniapp')).toBe(false)
+    expect(state.snapshot.microApps.some(item => item.code === 'example-miniapp')).toBe(false)
+    expect(f.apps.resolvePlatformApp('example-miniapp')).toBeUndefined()
+    expect(readFileSync(join(directory, 'index.html'), 'utf8')).toBe('legacy')
   })
 
   it('marks packages requesting supported capabilities for the isolated platform runtime', () => {
@@ -471,7 +397,7 @@ describe('official application installation and uninstallation', () => {
     const updated = f.apps.scan().snapshot.microApps.find(app => app.code === manifest.id)
     expect(updated?.platformApp).toBe(true)
     expect(f.apps.resolvePlatformApp(manifest.id)?.requiredCapabilities).toEqual([])
-    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 2 } }))
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 3 } }))
     expect(f.apps.scan().installed[0].error).toContain('不支持')
   })
 

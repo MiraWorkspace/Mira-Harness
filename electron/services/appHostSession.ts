@@ -48,6 +48,8 @@ export class AppHostSession {
     }
   }
 
+  event(event: string, value: unknown) { this.connection?.event(event, value) }
+
   themeChanged(theme: 'light' | 'dark') { this.connection?.themeChanged(theme) }
 
   dispose() {

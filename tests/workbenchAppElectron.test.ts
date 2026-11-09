@@ -15,7 +15,7 @@ it('connects the Workbench interface to SDK storage and browser requests', async
     const { stdout, stderr } = await promisify(execFile)(createRequire(import.meta.url)('electron'), [join(directory, 'main.cjs')], { env, timeout: 20000 })
     const line = stdout.split('\n').find(value => value.startsWith('RESULT='))
     if (!line) throw new Error(stdout + stderr)
-    expect(JSON.parse(line.slice(7))).toEqual({ imported: true, saved: true, restored: true, browser: true, miniapp: true, visibility: true, management: true, legacyReads: 1 })
+    expect(JSON.parse(line.slice(7))).toEqual({ imported: true, saved: true, restored: true, browser: true, legacyReads: 1 })
   } finally { await rm(directory, { recursive: true, force: true }) }
 }, 60000)
 
@@ -38,10 +38,8 @@ app.whenReady().then(async () => {
      else if (data.method === 'storage.migrate') value = 1
      else if (data.method === 'storage.importLegacyWorkbenchSites') { legacyReads++; value = JSON.stringify([{ id: 'old', name: '旧网站', url: 'https://example.com/', category: 'assistant', builtin: false, visible: true }]) }
      else if (data.method === 'workbench.browser') { requests.push(data.params); value = null }
-     else if (data.method === 'workbench.apps') value = [{ id: 'sample', name: '示例小程序', enabled: true, approved: false }]
-     else if (data.method === 'workbench.review') { requests.push({ type: 'review', appId: data.params.appId }); value = true }
-     else if (['workbench.install', 'workbench.revoke', 'workbench.uninstall'].includes(data.method)) { requests.push({ type: data.method, appId: data.params?.appId }); value = true }
-     else if (data.method === 'workbench.app') { requests.push(data.params); value = data.params.type === 'open' ? 123 : null }
+     else if (data.method === 'files.list' || data.method === 'storage.legacyWorkbenchMiniapps') value = []
+     else if (data.method === 'files.write') value = null
      else if (data.method === 'storage.transaction') value = data.params.operations.map(op => {
       const table = tables[op.table], matches = row => Object.entries(op.where || {}).every(([k,v]) => row[k] === v)
       if (op.type === 'select') return table.filter(matches).sort((a,b) => (a.position || 0) - (b.position || 0)).slice(op.offset || 0, (op.offset || 0) + (op.limit || 100))
@@ -66,40 +64,17 @@ app.whenReady().then(async () => {
   await win.loadURL(url)
   await wait(() => inspect('document.body.innerText.includes("旧网站")'))
   const imported = true
-  await inspect('document.querySelector("[aria-label=显示管理]").click()')
+  await inspect('document.querySelector("[aria-label=设置]").click()')
   await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("旧网站")).querySelector("button").click()')
-  await inspect('const input = document.querySelector(".site-dialog input"); input.value = "已修改"; input.dispatchEvent(new Event("input", { bubbles:true })); document.querySelector(".site-dialog form").requestSubmit()')
+  await inspect('const input = document.querySelector(".site-dialog input[placeholder=请输入名称]"); input.value = "已修改"; input.dispatchEvent(new Event("input", { bubbles:true })); document.querySelector(".site-dialog form").requestSubmit()')
   await wait(() => tables.entries.some(row => row.id === 'old' && row.name === '已修改'))
   await wait(() => inspect('document.body.innerText.includes("已修改")'))
   await inspect('[...document.querySelectorAll(".site-card")].find(e => e.textContent.includes("已修改")).click()')
   await wait(() => requests.some(item => item.type === 'open' && item.url === 'https://example.com/'))
   await inspect('document.querySelector(".tab--home").click()')
-  await wait(() => inspect('document.body.innerText.includes("示例小程序")'))
-  await inspect('[...document.querySelectorAll(".site-card")].find(e => e.textContent.includes("示例小程序")).click()')
-  await wait(() => requests.some(item => item.type === 'review' && item.appId === 'sample') && requests.some(item => item.type === 'open' && item.appId === 'sample'))
-  await wait(() => requests.some(item => item.type === 'layout' && item.id === 123 && item.visible))
-  const previousLayouts = requests.filter(item => item.type === 'layout' && item.id === 123).length
-  win.setSize(1200, 800)
-  await wait(() => requests.filter(item => item.type === 'layout' && item.id === 123).length > previousLayouts)
-  await inspect('document.querySelector(".tab--home").click(); document.querySelector("[aria-label=安装小程序]").click()')
-  await wait(() => requests.some(item => item.type === 'workbench.install'))
-  await inspect('document.querySelector("[aria-label=显示管理]").click()')
-  await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("示例小程序")).querySelector("input").click()')
-  await wait(() => tables.entries.some(row => row.address === 'sample' && row.visible === 0))
-  await inspect('document.querySelector("[aria-label=关闭]").click()')
-  await wait(() => inspect('![...document.querySelectorAll(".site-card")].some(e => e.textContent.includes("示例小程序"))'))
   await win.loadURL(url)
   await wait(() => inspect('document.body.innerText.includes("已修改")'))
-  await inspect('document.querySelector("[aria-label=显示管理]").click()')
-  await wait(() => inspect('[...document.querySelectorAll(".manage-item")].some(e => e.textContent.includes("示例小程序"))'))
-  if (await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("示例小程序")).querySelector("input").checked')) throw Error('visibility not restored')
-  await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("示例小程序")).querySelector("input").click()')
-  await wait(() => tables.entries.some(row => row.address === 'sample' && row.visible === 1))
-  await inspect('[...[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("示例小程序")).querySelectorAll("button")].find(e => e.textContent.includes("卸载")).click()')
-  await wait(() => requests.some(item => item.type === 'workbench.uninstall' && item.appId === 'sample'))
-  await win.loadURL(url)
-  await wait(() => inspect('document.body.innerText.includes("已修改")'))
-  console.log('RESULT=' + JSON.stringify({ imported, saved: true, restored: true, browser: true, miniapp: true, visibility: true, management: true, legacyReads }))
+  console.log('RESULT=' + JSON.stringify({ imported, saved: true, restored: true, browser: true, legacyReads }))
  } catch (error) { console.error(error); process.exitCode = 1 }
  finally { win?.destroy(); server?.close(); app.quit() }
 })

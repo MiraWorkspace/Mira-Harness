@@ -30,6 +30,7 @@ vi.mock('electron', async () => {
 vi.mock('../electron/bootstrap/miraMainWindow', () => ({ miraShellView: (owner: any) => owner.shellView }))
 import { AppViewManager } from '../electron/services/appViewManager'
 
+const resources = { mount: (_id: string, _directory: string, entry: string) => `http://127.0.0.1:8123/apps/resource-test/${entry}`, unmount: vi.fn() }
 const app = { id: 'sample', installationId: 'a'.repeat(64), enabled: true, firstParty: true, requiredCapabilities: ['storage:app'], url: 'http://127.0.0.1:8123/apps/micro-sample/index.html' }
 function fixture() {
   const ownerContents = Object.assign(new EventEmitter(), { send: vi.fn(), getZoomFactor: () => 1, isFocused: () => false, focus: vi.fn() })
@@ -70,10 +71,10 @@ describe('isolated application view manager', () => {
     expect(mocks.views).toHaveLength(0)
   })
 
-  it('refuses to open a third-party miniapp directly from the shell', () => {
+  it('opens only first-party applications from the shell', () => {
     const { owner, runtime, manager } = fixture()
     runtime.requireApproval.mockReturnValue({ ...app, firstParty: false })
-    expect(() => manager.open(owner as never, 'sample')).toThrow('只能通过子应用')
+    expect(() => manager.open(owner as never, 'sample')).toThrow('仅支持第一方子应用')
     expect(mocks.views).toHaveLength(0)
   })
 
@@ -94,16 +95,16 @@ describe('isolated application view manager', () => {
     resolve.mockImplementation(id => id === 'mira-workbench' ? workbench : { ...app, firstParty: false })
     const parent = manager.open(owner as never, 'mira-workbench')
     manager.setBounds(owner as never, parent, { x: 20, y: 30, width: 500, height: 400 })
-    const child = manager.workbenchApp(parent, { type: 'open', appId: 'sample' }) as number
-    expect(runtime.requireApproval).toHaveBeenCalledWith('sample')
-    manager.workbenchApp(parent, { type: 'layout', id: child, visible: true, bounds: { x: 100, y: 100, width: 500, height: 500 } })
+    const child = manager.ownedView(parent, { type: 'open', key: 'sample', entry: 'index.html' }, resources, '/app/files/release') as number
+    expect(runtime.requireApproval).not.toHaveBeenCalledWith('sample')
+    manager.ownedView(parent, { type: 'layout', id: child, visible: true, bounds: { x: 100, y: 100, width: 500, height: 500 } }, resources)
     expect(mocks.views[1].setBounds).toHaveBeenLastCalledWith({ x: 120, y: 130, width: 400, height: 300 })
     manager.setBounds(owner as never, parent, { x: 0, y: 0, width: 0, height: 0 })
     expect(mocks.views[1].setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 0, height: 0 })
     manager.setBounds(owner as never, parent, { x: 20, y: 30, width: 500, height: 400 })
     expect(mocks.views[1].setBounds).toHaveBeenLastCalledWith({ x: 120, y: 130, width: 400, height: 300 })
-    expect(() => manager.workbenchApp(child, { type: 'close', id: child })).toThrow('权限')
-    expect(() => manager.workbenchApp(parent, { type: 'open', appId: 'mira-workbench' })).toThrow('ID')
+    expect(() => manager.ownedView(child, { type: 'close', id: child }, resources)).toThrow('权限')
+    expect(() => manager.ownedView(parent, { type: 'open', key: '../bad', entry: 'index.html' }, resources, '/app/files/release')).toThrow('入口')
     manager.close(owner as never, parent)
     expect(mocks.views[0].webContents.destroyed).toBe(true)
     expect(mocks.views[1].webContents.destroyed).toBe(true)
@@ -124,7 +125,7 @@ it('layers shell overlays above live app, miniapp and browser views and restores
   expect(shell.setBackgroundColor).toHaveBeenCalledWith('#00000000')
   expect(owner.webContents.focus).toHaveBeenCalledOnce()
   expect(view.setBounds).toHaveBeenCalledTimes(boundsCalls)
-  const mini = manager.workbenchApp(id, { type: 'open', appId: 'sample' })
+  const mini = manager.ownedView(id, { type: 'open', key: 'sample', entry: 'index.html' }, resources, '/app/files/release')
   manager.workbenchBrowser(id, { type: 'open', tabId: 'page', url: 'https://example.com' })
   expect(owner.contentView.children.at(-1)).toBe(shell)
   expect(() => manager.setShellOverlay({} as never, id, true)).toThrow('无效')

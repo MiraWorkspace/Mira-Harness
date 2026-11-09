@@ -7,10 +7,10 @@ interface AppSdkServices {
   notify(input: { appId: string; title: string; body?: string }): Promise<void>
   readLegacyWorkbenchSites?(appId: string): Promise<string | null>
   workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void
-  workbenchApp?(ownerId: number, input: Record<string, unknown>): unknown
-  workbenchApps?(ownerId: number): unknown
-  reviewWorkbenchApp?(ownerId: number, appId: string, authorize: () => void): Promise<boolean>
-  manageWorkbenchApp?(ownerId: number, action: 'install' | 'uninstall' | 'revoke', appId: string | undefined, authorize: () => void): Promise<boolean>
+  files?(appId: string, ownerId: number, method: string, input: Record<string, unknown>, authorize: () => void): Promise<unknown> | unknown
+  views?(appId: string, ownerId: number, input: Record<string, unknown>): unknown
+  legacyMiniapps?(appId: string, input: Record<string, unknown>): Promise<unknown> | unknown
+
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -32,10 +32,10 @@ export class AppSdkDispatcher {
     if (typeof method !== 'string' || method.length > 128) throw new Error('请求方法无效')
     if (method === 'context.get') {
       const context = this.runtime.authorize(sessionId, ownerId)
-      return { ...context, apiVersion: { major: 1, minor: 1 } }
+      return { ...context, apiVersion: { major: 1, minor: 2 } }
     }
-    if (method === 'storage.migrate') return this.runtime.migrate(sessionId, ownerId, record(params).migrations as AppMigration[])
-    if (method === 'storage.transaction') return this.runtime.transaction(sessionId, ownerId, record(params).operations as AppDataOperation[])
+    if (method === 'storage.migrate') return this.runtime.migrate(sessionId, ownerId, record(params).migrations as AppMigration[], record(params).namespace as string | undefined)
+    if (method === 'storage.transaction') return this.runtime.transaction(sessionId, ownerId, record(params).operations as AppDataOperation[], record(params).namespace as string | undefined)
     if (method === 'storage.importLegacyWorkbenchSites') {
       const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
       this.runtime.authorize(sessionId, ownerId, 'storage:app')
@@ -50,32 +50,21 @@ export class AppSdkDispatcher {
       if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchBrowser) throw new Error('应用没有所需权限')
       return this.services.workbenchBrowser(ownerId, record(params))
     }
-    if (method === 'workbench.app') {
-      const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
-      if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchApp) throw new Error('应用没有所需权限')
-      return this.services.workbenchApp(ownerId, record(params))
+    if (method.startsWith('files.')) {
+      const context = this.runtime.authorize(sessionId, ownerId, 'files:app')
+      if (!this.services.files) throw new Error('文件服务不可用')
+      const value = await this.services.files(context.appId, ownerId, method, record(params ?? {}), () => { this.runtime.authorize(sessionId, ownerId, 'files:app') })
+      this.runtime.authorize(sessionId, ownerId, 'files:app'); return value
     }
-    if (['workbench.apps', 'workbench.review', 'workbench.install', 'workbench.uninstall', 'workbench.revoke'].includes(method)) {
-      const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
-      if (!['mira-workbench', 'mira-workbench-test'].includes(appId)) throw new Error('应用没有所需权限')
-      if (method === 'workbench.apps') {
-        if (!this.services.workbenchApps) throw new Error('应用服务不可用')
-        return this.services.workbenchApps(ownerId)
-      }
-      const authorize = () => { this.runtime.authorize(sessionId, ownerId, 'workbench:manage') }
-      if (method !== 'workbench.review') {
-        if (!this.services.manageWorkbenchApp) throw new Error('应用服务不可用')
-        const action = method.slice('workbench.'.length) as 'install' | 'uninstall' | 'revoke'
-        const target = action === 'install' ? undefined : text(record(params).appId, 64)!
-        const changed = await this.services.manageWorkbenchApp(ownerId, action, target, authorize)
-        authorize()
-        return changed
-      }
-      if (!this.services.reviewWorkbenchApp) throw new Error('应用服务不可用')
-      const target = text(record(params).appId, 64)!
-      const approved = await this.services.reviewWorkbenchApp(ownerId, target, authorize)
-      this.runtime.authorize(sessionId, ownerId, 'workbench:manage')
-      return approved
+    if (method === 'views.control') {
+      const context = this.runtime.authorize(sessionId, ownerId, 'views:create')
+      if (!this.services.views) throw new Error('视图服务不可用')
+      return this.services.views(context.appId, ownerId, record(params))
+    }
+    if (method === 'storage.legacyWorkbenchMiniapps') {
+      const context = this.runtime.authorize(sessionId, ownerId, 'storage:app')
+      if (!['mira-workbench', 'mira-workbench-test'].includes(context.appId) || !this.services.legacyMiniapps) throw new Error('应用没有所需权限')
+      return this.services.legacyMiniapps(context.appId, record(params ?? {}))
     }
     if (method === 'appearance.get') {
       this.runtime.authorize(sessionId, ownerId, 'appearance:read')

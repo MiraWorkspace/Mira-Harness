@@ -52,6 +52,8 @@ export class AppSdkConnection {
     try { this.port.postMessage(message) } catch { this.close() }
   }
 
+  event(event: string, value: unknown) { this.send({ type: 'mira:event', event, value }) }
+
   themeChanged(theme: 'light' | 'dark') {
     if (this.closed) return
     try {

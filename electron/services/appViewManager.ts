@@ -1,4 +1,6 @@
 import { WebContentsView, type BrowserWindow, type WebContents, type WebFrameMain } from 'electron'
+import { randomUUID, createHash } from 'node:crypto'
+import { OwnedViewSession } from './ownedViewSession'
 import { join } from 'node:path'
 import { AppHostSession } from './appHostSession'
 import type { AppRuntime, InstalledPlatformApp } from './appRuntime'
@@ -9,7 +11,7 @@ import { bindAppViewShortcuts } from './appViewShortcuts'
 import { miraShellView } from '../bootstrap/miraMainWindow'
 
 type Bounds = { x: number; y: number; width: number; height: number }
-interface AppView { appId: string; owner: BrowserWindow; view: WebContentsView; session: AppHostSession; browser?: WorkbenchBrowserViews; parentId?: number; bounds: Bounds; childLayout?: { bounds: Bounds; visible: boolean }; cleanup(): void }
+interface AppView { appId: string; owner: BrowserWindow; view: WebContentsView; session: AppHostSession | OwnedViewSession; browser?: WorkbenchBrowserViews; parentId?: number; bounds: Bounds; childLayout?: { bounds: Bounds; visible: boolean }; cleanup(): void }
 
 /** Manages isolated native application views. Callers must authenticate the owner frame. */
 export class AppViewManager {
@@ -18,15 +20,18 @@ export class AppViewManager {
 
   constructor(private readonly runtime: AppRuntime, private readonly dispatcher: AppSdkDispatcher, private readonly resolveEntry: (id: string) => InstalledPlatformApp & { url: string }, private readonly preloadPath = join(__dirname, '../preload/appHost.cjs')) {}
 
-  open(owner: BrowserWindow, appId: string, parentId?: number) {
+  open(owner: BrowserWindow, appId: string) {
     if (owner.isDestroyed()) throw new Error('应用窗口已关闭')
     const approved = this.runtime.requireApproval(appId)
-    if (parentId === undefined && !approved.firstParty) throw new Error('第三方小程序只能通过子应用打开')
-    if (parentId !== undefined && approved.firstParty) throw new Error('第一方子应用不能作为第三方小程序打开')
+    if (!approved.firstParty) throw new Error('仅支持第一方子应用')
     const entry = this.resolveEntry(appId)
     if (entry.id !== approved.id || entry.installationId !== approved.installationId) throw new Error('应用已变化，请重新打开')
-    const network = appNetworkPolicy(entry.url)
-    const view = new WebContentsView({ webPreferences: { partition: `persist:mira-app-${appId}`, preload: this.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false } })
+    return this.createView(owner, appId, entry.url)
+  }
+
+  private createView(owner: BrowserWindow, appId: string, url: string, parentId?: number, resourceCleanup?: () => void, partitionKey = appId) {
+    const network = appNetworkPolicy(url)
+    const view = new WebContentsView({ webPreferences: { partition: `persist:mira-app-${partitionKey}`, preload: this.preloadPath, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false } })
     const contents = view.webContents, id = contents.id, appSession = contents.session
     const unbindShortcuts = bindAppViewShortcuts(owner, contents)
     contents.setZoomFactor(owner.webContents.getZoomFactor())
@@ -39,8 +44,8 @@ export class AppViewManager {
     })
     const preventDownload = (event: Electron.Event) => event.preventDefault()
     appSession.on('will-download', preventDownload)
-    let cleaned = false, attached = false, session: AppHostSession | undefined
-    const browser = ['mira-workbench', 'mira-workbench-test'].includes(appId) ? new WorkbenchBrowserViews(owner, contents, () => this.raiseOverlay(owner)) : undefined
+    let cleaned = false, attached = false, session: AppHostSession | OwnedViewSession | undefined
+    const browser = !resourceCleanup && ['mira-workbench', 'mira-workbench-test'].includes(appId) ? new WorkbenchBrowserViews(owner, contents, () => this.raiseOverlay(owner)) : undefined
     const ownerNavigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => {
       if (event.isMainFrame && !event.isSameDocument) cleanup()
     }
@@ -50,7 +55,7 @@ export class AppViewManager {
       if (this.overlays.get(owner)?.id === id) this.setShellOverlay(owner, id, false)
       this.views.delete(id)
       const parent = parentId === undefined ? undefined : this.views.get(parentId)
-      if (parent && !parent.view.webContents.isDestroyed()) parent.view.webContents.send('mira-app:browser-event', { type: 'miniapp-closed', id })
+      if (parent && !parent.view.webContents.isDestroyed()) parent.session.event('views.closed', { viewId: id })
       for (const child of this.views.values()) if (child.parentId === id) child.cleanup()
       owner.webContents.removeListener('destroyed', cleanup)
       owner.webContents.removeListener('did-start-navigation', ownerNavigation)
@@ -58,12 +63,13 @@ export class AppViewManager {
       unbindShortcuts()
       appSession.removeListener('will-download', preventDownload)
       browser?.dispose()
+      resourceCleanup?.()
       if (attached && !owner.isDestroyed()) owner.contentView.removeChildView(view)
       if (session) session.dispose()
       else if (!contents.isDestroyed()) contents.close()
     }
     try {
-      session = new AppHostSession(contents, appId, entry.url, this.runtime, this.dispatcher, message => {
+      session = resourceCleanup ? new OwnedViewSession(contents, url, (event, value) => this.views.get(parentId!)?.session.event(event, value)) : new AppHostSession(contents, appId, url, this.runtime, this.dispatcher, message => {
         if (!owner.isDestroyed()) owner.webContents.send('mira-app:failed', { id, message })
       })
       this.views.set(id, { appId, owner, view, session, browser, parentId, bounds: { x: 0, y: 0, width: 0, height: 0 }, cleanup })
@@ -144,26 +150,40 @@ export class AppViewManager {
     throw new Error('请求参数无效')
   }
 
-  workbenchApp(ownerId: number, input: Record<string, unknown>) {
+  ownedView(ownerId: number, input: Record<string, unknown>, resources: { mount(id: string, directory: string, entry: string): string; unmount(id: string): void }, directory?: string) {
     const parent = this.views.get(ownerId)
-    if (!parent?.browser || parent.owner.isDestroyed()) throw new Error('应用没有所需权限')
+    if (!parent || parent.parentId !== undefined || parent.owner.isDestroyed()) throw new Error('应用没有所需权限')
     if (input.type === 'open') {
-      if (typeof input.appId !== 'string' || input.appId === parent.appId || ['mira-workbench', 'mira-workbench-test'].includes(input.appId)) throw new Error('应用 ID 无效')
-      for (const child of this.views.values()) if (child.parentId === ownerId && child.appId === input.appId) return child.view.webContents.id
-      return this.open(parent.owner, input.appId, ownerId)
+      if (!directory || typeof input.entry !== 'string' || typeof input.key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(input.key)) throw new Error('视图入口无效')
+      const id = `resource-${randomUUID()}`, url = resources.mount(id, directory, input.entry)
+      const partition = createHash('sha256').update(`${parent.appId}:${input.key}`).digest('hex')
+      try { return this.createView(parent.owner, parent.appId, url, ownerId, () => resources.unmount(id), partition) }
+      catch (error) { resources.unmount(id); throw error }
     }
     if (!Number.isSafeInteger(input.id)) throw new Error('应用视图 ID 无效')
     const child = this.views.get(input.id as number)
-    if (!child || child.parentId !== ownerId) throw new Error('应用视图无效')
+    if (!child || child.parentId !== ownerId || !(child.session instanceof OwnedViewSession)) throw new Error('应用视图无效')
     if (input.type === 'close') { child.cleanup(); return }
+    if (input.type === 'reply') {
+      if (typeof input.requestId !== 'string' || typeof input.ok !== 'boolean') throw new Error('请求参数无效')
+      child.session.reply(input.requestId, input.ok, input.value, typeof input.error === 'string' ? input.error.slice(0, 1000) : undefined); return
+    }
+    if (input.type === 'event') {
+      if (typeof input.event !== 'string' || input.event.length > 128) throw new Error('请求参数无效')
+      child.session.event(input.event, input.value); return
+    }
     if (input.type === 'layout') {
       const bounds = input.bounds as Bounds
       if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(value => Number.isFinite(value) && value >= 0) || typeof input.visible !== 'boolean') throw new Error('应用视图尺寸无效')
-      child.childLayout = { bounds, visible: input.visible }
-      this.syncChild(parent, child)
-      return
+      child.childLayout = { bounds, visible: input.visible }; this.syncChild(parent, child); return
     }
     throw new Error('请求参数无效')
+  }
+
+  ownerWindow(ownerId: number) {
+    const item = this.views.get(ownerId)
+    if (!item || item.parentId !== undefined || item.owner.isDestroyed()) throw new Error('应用视图无效')
+    return item.owner
   }
 
   workbenchOwner(ownerId: number) {

@@ -1,11 +1,13 @@
-export const APP_CAPABILITIES = ['storage:app', 'appearance:read', 'models:generate', 'notifications:send', 'workbench:manage'] as const
+export const APP_CAPABILITIES = ['storage:app', 'appearance:read', 'models:generate', 'notifications:send', 'workbench:manage', 'files:app', 'views:create'] as const
 export type AppCapability = typeof APP_CAPABILITIES[number]
 export const APP_CAPABILITY_DESCRIPTIONS: Record<AppCapability, string> = {
   'storage:app': '读取和修改此应用自己的本地数据',
   'appearance:read': '读取并跟随 Mira 的主题',
   'models:generate': '使用你配置的模型生成内容，可能产生费用',
   'notifications:send': '通过 Mira 发送系统通知',
-  'workbench:manage': '管理工作台浏览器与小程序，并读取旧工作台网站数据',
+  'files:app': '读写此应用的文件，以及用户选择授权的目录',
+  'views:create': '创建应用自己管理的隔离视图及消息通道',
+  'workbench:manage': '管理工作台浏览器，并读取旧工作台网站数据',
 }
 
 export function resolveAppTheme(preference: unknown, systemDark: boolean): 'light' | 'dark' {

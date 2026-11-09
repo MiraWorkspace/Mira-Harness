@@ -16,6 +16,16 @@ export type WorkbenchBrowserRequest =
   | { type: 'control'; tabId: string; action: 'back' | 'forward' | 'reload' | 'stop' | 'close' }
   | { type: 'layout'; tabId: string; visible: boolean; bounds: { x: number; y: number; width: number; height: number } }
 
+export interface DirectoryGrant { id: string; name: string; access: 'read' | 'readwrite' }
+export interface FileLocation { path: string; grant?: string }
+export interface ViewRequest { viewId: number; requestId: string; method: string; params?: unknown }
+export type ViewControl =
+  | { type: 'open'; key: string; directory: string; entry: string }
+  | { type: 'close'; id: number }
+  | { type: 'layout'; id: number; visible: boolean; bounds: { x: number; y: number; width: number; height: number } }
+  | { type: 'reply'; id: number; requestId: string; ok: boolean; value?: unknown; error?: string }
+  | { type: 'event'; id: number; event: string; value: unknown }
+
 export class MiraSdkError extends Error {
   constructor(public readonly code: string, message: string) { super(message); this.name = 'MiraSdkError' }
 }
@@ -26,6 +36,7 @@ type Pending = { resolve(value: unknown): void; reject(error: Error): void; time
 export class MiraAppSdk {
   private readonly pending = new Map<string, Pending>()
   private readonly themeListeners = new Set<(theme: Theme) => void>()
+  private readonly viewListeners = new Set<(event: { event: string; value: any }) => void>()
   private closed = false
 
   constructor(private readonly port: MessagePort, private readonly timeoutMs = 30000) {
@@ -42,6 +53,10 @@ export class MiraAppSdk {
     if (message.type === 'mira:disconnect') { this.dispose(); return }
     if (message.type === 'mira:event' && message.event === 'appearance.changed' && (message.value === 'light' || message.value === 'dark')) {
       for (const listener of this.themeListeners) listener(message.value)
+      return
+    }
+    if (message.type === 'mira:event' && typeof message.event === 'string' && message.event.startsWith('views.')) {
+      for (const listener of this.viewListeners) listener({ event: message.event, value: message.value })
       return
     }
     if (message.type !== 'mira:response' || typeof message.id !== 'string') return
@@ -72,8 +87,9 @@ export class MiraAppSdk {
 
   readonly context = { get: () => this.request<AppContext>('context.get') }
   readonly storage = {
-    migrate: (migrations: AppMigration[]) => this.request<number>('storage.migrate', { migrations }),
-    transaction: (operations: AppOperation[]) => this.request<unknown[]>('storage.transaction', { operations }),
+    migrate: (migrations: AppMigration[], namespace?: string) => this.request<number>('storage.migrate', { migrations, namespace }),
+    transaction: (operations: AppOperation[], namespace?: string) => this.request<unknown[]>('storage.transaction', { operations, namespace }),
+    legacyWorkbenchMiniapps: (id?: string) => this.request<string[] | Uint8Array | null>('storage.legacyWorkbenchMiniapps', { id }),
     importLegacyWorkbenchSites: () => this.request<string | null>('storage.importLegacyWorkbenchSites'),
   }
   readonly appearance = {
@@ -88,12 +104,22 @@ export class MiraAppSdk {
   readonly notifications = { send: (request: NotificationRequest) => this.request<void>('notifications.send', request) }
   readonly workbench = {
     browser: (request: WorkbenchBrowserRequest) => this.request<void>('workbench.browser', request),
-    apps: () => this.request<Array<{ id: string; name: string; icon?: string; enabled: boolean; approved: boolean }>>('workbench.apps'),
-    review: (appId: string) => this.request<boolean>('workbench.review', { appId }, Math.max(this.timeoutMs, 300000)),
-    install: () => this.request<boolean>('workbench.install', undefined, Math.max(this.timeoutMs, 300000)),
-    uninstall: (appId: string) => this.request<boolean>('workbench.uninstall', { appId }, Math.max(this.timeoutMs, 300000)),
-    revoke: (appId: string) => this.request<boolean>('workbench.revoke', { appId }, Math.max(this.timeoutMs, 300000)),
-    app: (request: { type: 'open'; appId: string } | { type: 'close'; id: number } | { type: 'layout'; id: number; visible: boolean; bounds: { x: number; y: number; width: number; height: number } }) => this.request<number | void>('workbench.app', request),
+  }
+  readonly files = {
+    directories: () => this.request<DirectoryGrant[]>('files.directories'),
+    read: (input: FileLocation) => this.request<Uint8Array>('files.read', input),
+    write: (input: FileLocation & { data: Uint8Array }) => this.request<void>('files.write', input),
+    list: (input: Partial<FileLocation> = {}) => this.request<Array<{ name: string; directory: boolean }>>('files.list', input),
+    remove: (input: FileLocation) => this.request<void>('files.remove', input),
+    selectDirectory: (access: 'read' | 'readwrite') => this.request<DirectoryGrant | null>('files.selectDirectory', { access }, Math.max(this.timeoutMs, 300000)),
+    revoke: (id: string) => this.request<void>('files.revoke', { id }),
+  }
+  readonly views = {
+    control: (input: ViewControl) => this.request<number | void>('views.control', input),
+    subscribe: (listener: (event: { event: string; value: ViewRequest | { viewId: number } }) => void) => {
+      this.viewListeners.add(listener)
+      return () => { this.viewListeners.delete(listener) }
+    },
   }
 
   dispose() {
@@ -106,6 +132,7 @@ export class MiraAppSdk {
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new MiraSdkError('DISCONNECTED', 'Mira connection is closed')) }
     this.pending.clear()
     this.themeListeners.clear()
+    this.viewListeners.clear()
   }
 }
 
