@@ -5,6 +5,7 @@
       class="first-party-frame"
       :src="url"
       :title="title"
+      :name="title"
       sandbox="allow-scripts allow-forms"
       :allow="manifest.appId === 'mira-harness' && manifest.capabilities.includes('harness:workbench') ? 'clipboard-write *' : undefined"
       referrerpolicy="no-referrer"

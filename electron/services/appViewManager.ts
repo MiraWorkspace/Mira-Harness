@@ -267,5 +267,12 @@ export class AppViewManager {
 
   themeChanged(theme: 'light' | 'dark') { for (const item of this.views.values()) item.session.themeChanged(theme) }
 
+  resourceViews() {
+    return [...this.views.values()].filter(item => !item.view.webContents.isDestroyed()).map(item => {
+      const contents = item.view.webContents
+      return { id: contents.id, name: contents.getTitle() || item.appId, detail: `${item.appId}${item.parentId === undefined ? ' · 子应用' : ' · 子应用视图'}` }
+    })
+  }
+
   closeAll() { for (const item of this.views.values()) item.cleanup() }
 }

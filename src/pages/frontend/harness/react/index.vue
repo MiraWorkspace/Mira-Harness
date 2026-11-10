@@ -2,7 +2,7 @@
   <main class="harness-react-host">
     <p v-if="error" class="harness-react-host__error" role="alert">{{ error }}</p>
     <p v-else-if="!url" class="harness-react-host__loading">正在加载 Harness…</p>
-    <FirstPartyFrame v-else ref="appFrame" :url="url" title="Mira Harness" :manifest="manifest" :api="api!" :context="context" :active="active" :toggle-theme="toggleShellTheme" :get-appearance="getAppearance" :set-theme="setShellTheme" route="/" :navigate="navigate" :navigation-snapshot="navigationSnapshot" @controls-state="navigationOwner.receiveControls" @navigation-state="navigationOwner.receive" @navigation-reset="navigationOwner.reset" @error="error = $event" />
+    <FirstPartyFrame v-else ref="appFrame" :url="url" :title="activeViewTitle" :manifest="manifest" :api="api!" :context="context" :active="active" :toggle-theme="toggleShellTheme" :get-appearance="getAppearance" :set-theme="setShellTheme" route="/" :navigate="navigate" :navigation-snapshot="navigationSnapshot" @controls-state="navigationOwner.receiveControls" @navigation-state="navigationOwner.receive" @navigation-reset="navigationOwner.reset" @error="error = $event" />
     <p v-if="routeError" class="harness-react-host__route-error" role="alert">{{ routeError }}</p>
   </main>
 </template>
@@ -34,6 +34,12 @@ const routeError = ref('')
 const appFrame = ref<InstanceType<typeof FirstPartyFrame>>()
 const appNavigation = useAppNavigationStore()
 const navigationSnapshot = appNavigation.getSavedSnapshot('mira-harness')
+const activeViewTitle = computed(() => {
+  const snapshot = appNavigation.state?.snapshot
+  if (!snapshot) return 'Mira 任务界面'
+  const kind = snapshot.detached ? snapshot.draft : snapshot.entries[snapshot.cursor]?.kind
+  return kind === 'automations' ? 'Mira · 自动化' : kind === 'extensions' ? 'Mira · 插件市场' : kind === 'conversation' && !snapshot.detached ? 'Mira · 对话' : 'Mira · 新任务'
+})
 const navigationOwner = appNavigation.register('mira-harness', command => appFrame.value?.navigateHistory(command) ?? false, command => appFrame.value?.harnessControl(command) ?? false)
 const navigate = (path: string) => navigateHarnessHost(router, path)
 const openCommandCenter = () => { if (active.value) appFrame.value?.openCommandCenter() }

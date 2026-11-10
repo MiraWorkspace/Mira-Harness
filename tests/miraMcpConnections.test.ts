@@ -6,7 +6,8 @@ const sdk = vi.hoisted(() => ({ clients: [] as any[], kills: [] as Array<() => v
 vi.mock('node:child_process', () => ({ execFile: vi.fn((_command, _args, _options, done) => { sdk.kills.push(done) }) }))
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({ Client: class {
   onclose?: () => void
-  connect = vi.fn(async () => undefined)
+  transport?: unknown
+  connect = vi.fn(async (transport: unknown) => { this.transport = transport })
   listTools = vi.fn(async () => ({ tools: [{ name: 'mira_review' }] }))
   callTool = vi.fn(async () => ({ content: [{ type: 'text', text: 'reviewed' }] }))
   close = vi.fn(async () => { this.onclose?.() })
@@ -26,6 +27,22 @@ beforeEach(() => { sdk.clients = []; sdk.kills = []; sdk.next = undefined; manag
 afterEach(async () => { await manager.closeAll(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('Mira MCP connection state', () => {
+  it('reports local PIDs and shared/remote connections across run siblings and removes closed runs', async () => {
+    const sibling = manager.createSibling(async () => ({} as any))
+    const local = { ...config, id: 'plugin:review@local:server', env: { SECRET: 'private-env' }, args: ['private-arg'] }
+    try {
+      await manager.refresh([{ ...config, id: 'remote', type: 'sse', url: 'https://private-url.test' }])
+      await sibling.refresh([local, { ...config, id: 'plugin:browser-use@mira-builtin:browser', command: 'mira:embedded-browser' }])
+      expect(manager.resourceConnections()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: local.id, pid: 4242, mode: 'local', state: 'connected' }),
+        expect.objectContaining({ id: 'remote', pid: undefined, mode: 'remote' }),
+        expect.objectContaining({ id: 'plugin:browser-use@mira-builtin:browser', pid: undefined, mode: 'shared' }),
+      ]))
+      expect(JSON.stringify(manager.resourceConnections())).not.toMatch(/private-env|private-arg|private-url/)
+      await sibling.closeAll()
+      expect(manager.resourceConnections().map(row => row.id)).toEqual(['remote'])
+    } finally { await sibling.closeAll() }
+  })
   it('uses the owned platform connection only for the builtin plugin and propagates it to run siblings', async () => {
     const close = vi.fn(async () => undefined)
     const execute = vi.fn(async (_name, _args, signal, call) => call(signal))

@@ -1,7 +1,7 @@
 <template>
   <main class="resource-manager" data-testid="resource-manager">
     <header class="resource-header">
-      <div class="resource-heading"><h1>资源管理器</h1><div v-if="usageActive" class="subtle tiny">{{ snapshot ? `${snapshot.processes.length} 个进程` : '正在读取资源占用...' }}</div></div>
+      <div class="resource-heading"><h1>资源管理器</h1><div v-if="usageActive" class="subtle tiny">{{ snapshot ? `${snapshot.processes.length} 个进程 · ${snapshot.plugins?.length ?? 0} 个插件` : '正在读取资源占用...' }}</div></div>
       <div role="tablist" aria-label="资源类型" class="resource-tabs">
         <button v-for="item in tabs" :id="`tab-${item.id}`" :key="item.id" role="tab" :aria-selected="tab === item.id" :tabindex="tab === item.id ? 0 : -1" aria-controls="resource-content" @click="tab = item.id" @keydown="moveTab($event, item.id)">{{ item.label }}</button>
       </div>
@@ -9,6 +9,7 @@
     <div id="resource-content" role="tabpanel" :aria-labelledby="`tab-${tab}`" class="resource-content">
       <template v-if="usageActive">
         <p v-if="error" role="alert" class="error card">{{ error }}</p>
+        <p v-if="snapshot?.warning" role="status" class="sampling-note small subtle">{{ snapshot.warning }}</p>
         <div class="usage-layout">
           <aside>
             <div class="card usage-meter" :data-testid="`resource-manager-${tab}`">
@@ -16,15 +17,27 @@
               <div class="meter-value"><span class="mono">{{ snapshot ? (tab === 'cpu' ? formatPercent(appCpu) : formatBytes(appMemory)) : '—' }}</span><span class="tiny muted">Mira</span></div>
               <div class="meter-bar" role="img" :aria-label="`Mira ${appValue}，整机 ${systemValue}`"><div class="meter-system" :style="{ width: `${systemUsage}%` }" /><div class="meter-app" :style="{ width: `${appUsage}%` }" /></div>
               <div class="meter-legend tiny subtle"><span><i class="app-dot" />Mira</span><span><i class="system-dot" />整机 <b class="mono">{{ systemValue }}</b></span></div>
+              <p class="usage-note small subtle">包含 Mira 及其子进程，每秒刷新。共享进程只计一次；插件的启用状态不代表正在执行。</p>
+              <p v-if="groups.some(group => group.pendingCpu) && tab === 'cpu'" class="usage-note small subtle">新发现的子进程将在下一次采样后显示 CPU；当前合计为已采样部分。</p>
             </div>
           </aside>
           <section class="usage-groups">
             <div v-for="group in groups" :key="group.id" class="card usage-group" :data-testid="`resource-manager-group-${group.id}`">
-              <button class="group-heading" :aria-expanded="expanded[group.id]" @click="expanded[group.id] = !expanded[group.id]"><ChevronRight :size="16" class="subtle chevron" :class="{ expanded: expanded[group.id] }" /><span class="group-title">{{ group.title }}</span><span class="group-count tiny subtle">{{ group.processes.length }}</span><span class="group-total mono small subtle">{{ tab === 'cpu' ? formatPercent(group.cpuPercent) : formatBytes(group.memoryBytes) }}</span></button>
+              <button class="group-heading" :aria-expanded="expanded[group.id]" @click="expanded[group.id] = !expanded[group.id]"><ChevronRight :size="16" class="subtle chevron" :class="{ expanded: expanded[group.id] }" /><span class="group-title">{{ group.title }}</span><span class="group-count tiny subtle">{{ group.plugins.length ? `${group.plugins.length} 个插件 · ` : '' }}{{ group.processes.length }} 个进程</span><span class="group-total mono small subtle">{{ group.processes.length ? (tab === 'cpu' ? formatPercent(group.cpuPercent) : formatBytes(group.memoryBytes)) : '—' }}</span></button>
               <div v-if="expanded[group.id]" class="group-body">
-                <div v-if="!group.processes.length" class="empty small muted">暂无进程</div>
-                <template v-else><div class="process-grid process-heading tiny subtle"><div>进程</div><div>PID</div><div>{{ tab === 'cpu' ? 'CPU' : '内存' }}</div></div>
-                  <div v-for="row in group.processes" :key="row.pid" class="process-grid process-row small" data-testid="resource-manager-process-row"><div class="process-name medium" :title="row.name">{{ row.name }}</div><div class="mono subtle">{{ row.pid }}</div><div class="mono subtle">{{ tab === 'cpu' ? formatPercent(row.cpuPercent) : formatBytes(row.memoryBytes) }}</div></div>
+                <div v-if="!group.processes.length && !group.plugins.length" class="empty small subtle">{{ snapshot ? group.empty : '正在读取...' }}</div>
+                <div v-for="plugin in group.plugins" :key="plugin.id" class="plugin-row small" data-testid="resource-manager-plugin-row">
+                  <div class="plugin-identity"><span class="medium">{{ plugin.name }}</span><span class="resource-status tiny">{{ plugin.status }}</span></div>
+                  <p class="process-detail subtle">{{ plugin.detail }}</p>
+                  <p v-if="plugin.pids.length" class="process-detail subtle">{{ plugin.pids.length }} 个独立进程，占用明细见下方</p>
+                </div>
+                <template v-if="group.processes.length"><div class="process-grid process-heading tiny subtle"><div>进程 / 用途</div><div>PID</div><div>{{ tab === 'cpu' ? 'CPU' : '内存' }}</div></div>
+                  <div v-for="row in group.processes" :key="row.pid" class="process-grid process-row small" data-testid="resource-manager-process-row">
+                    <div class="process-identity"><div class="view-identity"><div class="process-name medium" :title="row.name">{{ row.name }}</div><span v-if="row.views?.length === 1" class="resource-status tiny">{{ row.views[0].status }}</span></div><p v-if="row.detail" class="process-detail subtle">{{ row.detail }}</p>
+                      <p v-if="row.views?.length === 1 && row.views[0].detail" class="process-detail subtle">{{ row.views[0].detail }}</p>
+                      <div v-for="view in (row.views?.length ?? 0) > 1 ? row.views : []" :key="view.id" class="resource-view"><div class="view-identity"><span class="medium">{{ view.name }}</span><span class="resource-status tiny">{{ view.status }}</span></div><p v-if="view.detail" class="process-detail subtle">{{ view.detail }}</p></div>
+                    </div><div class="mono subtle">{{ row.pid }}</div><div class="mono subtle">{{ tab === 'cpu' ? formatPercent(row.cpuPercent) : formatBytes(row.memoryBytes) }}</div>
+                  </div>
                 </template>
               </div>
             </div>
@@ -50,9 +63,9 @@ type Tab = typeof tabs[number]['id']
 const tab = ref<Tab>('cpu')
 const snapshot = ref<MiraResourceSnapshot>()
 const error = ref('')
-const expanded = ref({ base: true, 'builtin-plugin': true, 'community-plugin': true })
+const expanded = ref({ ui: true, base: true, 'builtin-plugin': true, 'community-plugin': true, other: true })
 const usageActive = computed(() => tab.value === 'cpu' || tab.value === 'memory')
-const groups = computed(() => groupResourceUsage(snapshot.value?.processes ?? []))
+const groups = computed(() => groupResourceUsage(snapshot.value?.processes ?? [], snapshot.value?.plugins ?? [], tab.value === 'memory' ? 'memory' : 'cpu'))
 const appCpu = computed(() => groups.value.reduce((sum, group) => sum + group.cpuPercent, 0))
 const appMemory = computed(() => groups.value.reduce((sum, group) => sum + group.memoryBytes, 0))
 const appValue = computed(() => tab.value === 'cpu' ? formatPercent(snapshot.value ? appCpu.value : undefined) : formatBytes(snapshot.value ? appMemory.value : undefined))

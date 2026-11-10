@@ -111,6 +111,10 @@ export class HarnessTerminalSessions {
     }
   }
 
+  resourceProcesses() {
+    return [...this.sessions.values()].map(entry => ({ pid: entry.process.pid, name: '任务终端', detail: entry.cwd }))
+  }
+
   private authorize(sender: WebContents, sessionId: string, terminalId: string) {
     const entry = this.sessions.get(terminalId)
     if (!entry || entry.ownerId !== sender.id || entry.sessionId !== sessionId) throw new Error('终端会话无效')

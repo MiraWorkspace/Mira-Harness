@@ -25,7 +25,8 @@ import { AutomationKeepAwake } from './services/automationKeepAwake'
 import { MiraNotifications } from './services/miraNotifications'
 import { registerNotificationIpc } from './ipc/notificationIpc'
 import { handleDetachedViewCommand } from './services/detachedViewWindow'
-import { isResourceManagerWindow } from './bootstrap/resourceManager'
+import { configureResourceManager, isResourceManagerWindow } from './bootstrap/resourceManager'
+import { isWorkbenchId, markLegacyDataCleared, WORKBENCH_LEGACY_CLEARED_KEY } from './services/workbenchLegacyPolicy'
 import { miraHome } from './bootstrap/miraHome'
 
 const keepAwake = new AutomationKeepAwake(powerSaveBlocker)
@@ -60,6 +61,20 @@ function publishAppTheme() { if (services) services.appViews.themeChanged(servic
 app.whenReady().then(async () => {
   setupDevelopmentDockIcon()
   services = await createPlatformServices({ miraPaths, publishHarnessEvent })
+  configureResourceManager({
+    views: () => services!.appViews.resourceViews(),
+    plugins: () => services!.database.plugins.list(),
+    connections: () => services!.mcpManager.resourceConnections(),
+    terminals: () => terminalSessions.resourceProcesses(),
+    storageApps: () => services!.apps.state().installed.filter(item => !item.error).map(({ id, name, directory }) => ({ id, name, identity: directory })),
+    clearStorageDatabase: (id, identity) => {
+      const service = services!
+      if (!service.apps.state().installed.some(item => item.id === id && item.directory === identity && !item.error)) throw new Error('应用已变化，请重新扫描')
+      service.appViews.closeApp(id)
+      if (isWorkbenchId(id)) service.database.savePreference(WORKBENCH_LEGACY_CLEARED_KEY, markLegacyDataCleared(service.database.getSnapshot().preferences, id))
+      service.appRuntime.clearAppData(id)
+    },
+  })
   nativeTheme.on('updated', publishAppTheme)
   services.apps.startWatching(state => {
     miraWindows().forEach(window => {

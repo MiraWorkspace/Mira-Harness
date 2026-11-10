@@ -14,6 +14,10 @@ import { MIRA_COMPUTER_SERVER_ID } from '../../src/config/miraComputerUse'
 import { createMiraComputerConnection, type MiraComputerConnection, type MiraComputerFeedback } from '../services/miraComputerUse'
 import { join } from 'node:path'
 
+export interface McpResourceConnection {
+  id: string; name: string; pid?: number; state: MiraMcpConnection['state']; toolCount: number
+  mode: 'local' | 'remote' | 'shared'
+}
 /**
  * MCP 连接管理器：连接已配置的 MCP server，把工具转成 Agent 可调用的 AgentTool。
  */
@@ -24,7 +28,7 @@ export class McpManager {
   private revision = 0
   private readonly configs = new Map<string, McpServerConfig>()
   private readonly computerFeedback = new Map<Client, MiraComputerFeedback>()
-  constructor(private readonly authorization?: MiraMcpAuthorization, private readonly authorizationRoot = authorization, private readonly computerConnection: () => MiraComputerConnection = () => createMiraComputerConnection({ resourceRoot: join(process.cwd(), 'resources/plugins/computer-use') }), private readonly browserTransport?: () => Promise<Transport>) {
+  constructor(private readonly authorization?: MiraMcpAuthorization, private readonly authorizationRoot = authorization, private readonly computerConnection: () => MiraComputerConnection = () => createMiraComputerConnection({ resourceRoot: join(process.cwd(), 'resources/plugins/computer-use') }), private readonly browserTransport?: () => Promise<Transport>, private readonly resourceFamily = new Set<McpManager>()) {
     authorization?.subscribe(event => {
       const config = this.configs.get(event.configId)
       if (!config?.enabled || config.authentication !== 'oauth' || new URL(config.url!).href !== event.serverUrl) return
@@ -36,10 +40,21 @@ export class McpManager {
       else this.connections.set(config.id, { state: 'failed', toolCount: 0, error: event.error || 'MCP 授权已取消，请重新连接' })
     })
   }
-  createSibling(browserTransport?: () => Promise<Transport>) { return new McpManager(this.authorizationRoot?.fork(), this.authorizationRoot, this.computerConnection, browserTransport) }
+  createSibling(browserTransport?: () => Promise<Transport>) { return new McpManager(this.authorizationRoot?.fork(), this.authorizationRoot, this.computerConnection, browserTransport, this.resourceFamily) }
+
+  resourceConnections(): McpResourceConnection[] {
+    return [...this.resourceFamily].flatMap(manager => [...manager.configs.values()].map(config => {
+      const transport = manager.clients.get(config.id)?.transport
+      const status = manager.getStatus(config.id)
+      return { id: config.id, name: config.name, state: status.state, toolCount: status.toolCount,
+        pid: transport instanceof StdioClientTransport ? transport.pid ?? undefined : undefined,
+        mode: config.command === 'mira:embedded-browser' ? 'shared' as const : config.type === 'sse' || config.type === 'streamableHttp' ? 'remote' as const : 'local' as const }
+    }))
+  }
 
   async refresh(configs: McpServerConfig[], signal?: AbortSignal) {
     signal?.throwIfAborted()
+    this.resourceFamily.add(this)
     const revision = ++this.revision
     const previous = [...this.clients.values()]
     const feedback = [...this.computerFeedback.values()]
@@ -68,6 +83,7 @@ export class McpManager {
 
   async reconnect(config: McpServerConfig) {
     if (!config.enabled) throw new Error('只能重连已启用的 MCP 服务')
+    this.resourceFamily.add(this)
     const state = this.getStatus(config.id).state
     if (state === 'connecting' || state === 'connected') return
     this.configs.set(config.id, { ...config })
@@ -216,6 +232,7 @@ export class McpManager {
   }
 
   async closeAll() {
+    this.resourceFamily.delete(this)
     this.revision++
     const clients = [...this.clients.values()]
     const feedback = [...this.computerFeedback.values()]
