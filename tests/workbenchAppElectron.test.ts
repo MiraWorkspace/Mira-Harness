@@ -135,7 +135,7 @@ app.whenReady().then(async () => {
    fs.writeFileSync(path.join(process.env.WORKBENCH_SCREENSHOTS, 'home-tabs.png'), (await win.webContents.capturePage()).toPNG())
   }
   await inspect('document.querySelector("[aria-label=设置]").click()')
-  await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("旧网站")).querySelector("button").click()')
+  await inspect('[...document.querySelectorAll(".manage-transfer-item")].find(e => e.textContent.includes("旧网站")).querySelector("button").click()')
   await inspect('const input = document.querySelector(".site-dialog input[placeholder=请输入名称]"); input.value = "已修改"; input.dispatchEvent(new Event("input", { bubbles:true })); document.querySelector(".site-dialog form").requestSubmit()')
   await wait(() => tables.entries.some(row => row.id === 'old' && row.name === '已修改'))
   await wait(() => inspect('document.body.innerText.includes("已修改")'))
@@ -147,7 +147,7 @@ app.whenReady().then(async () => {
   await inspect('[...document.querySelectorAll(".entry-menu button")].find(e => e.textContent === "隐藏").click()')
   await wait(() => tables.entries.some(row => row.id === 'old' && row.visible === 0))
   await inspect('document.querySelector("[aria-label=设置]").click()')
-  await inspect('[...document.querySelectorAll(".manage-item")].find(e => e.textContent.includes("已修改")).querySelector("input").click()')
+  await inspect('[...document.querySelectorAll(".manage-transfer-item")].find(e => e.textContent.includes("已修改")).querySelector(".manage-move").click()')
   await inspect('[...document.querySelectorAll(".manage-dialog button")].find(e => e.textContent.includes("完成")).click()')
   await wait(() => inspect('[...document.querySelectorAll(".site-card")].some(e => e.textContent.includes("已修改"))'))
   await wait(() => tables.entries.some(row => row.id === 'old' && row.visible === 1))
@@ -296,6 +296,7 @@ app.whenReady().then(async () => {
   await wait(() => Boolean(finishLateIcon))
   finishLateIcon(uploadedLogo)
   await wait(() => requests.some(item => item.action === 'presentation' && item.tabId === 'late-cached' && item.presentation.icon?.startsWith('data:image/png;base64,')))
+  await wait(() => tables.entries.find(row => row.id === 'late-cached').cached_icon?.startsWith('data:image/png;base64,'))
   assert.equal(requests.findLast(item => item.action === 'presentation' && item.tabId === 'late-cached').presentation.icon, tables.entries.find(row => row.id === 'late-cached').cached_icon)
   await win.loadURL(url)
   await wait(() => inspect('document.body.innerText.includes("已修改")'))
@@ -354,6 +355,75 @@ app.whenReady().then(async () => {
   assert.equal(await inspect('document.querySelector(".dialog-actions button[type=submit]").disabled'), false)
   await inspect('document.querySelector(".site-dialog form").requestSubmit()')
   await wait(() => tables.entries.some(row => row.name === 'No logo required' && !row.icon && !row.cached_icon))
+  // Display transfer and cache policy are verified through the shipped interface.
+  const settings = () => inspect('document.querySelector("[aria-label=设置]").click()')
+  const doneSettings = () => inspect('document.querySelector(".manage-dialog .add-button").click()')
+  const setCache = count => inspect('(() => { const select = document.querySelector("#tab-cache-count"); select.value = ' + JSON.stringify(String(count)) + '; select.dispatchEvent(new Event("change", { bubbles:true })); })()')
+  await settings()
+  assert.equal(await inspect('document.querySelector("#tab-cache-count").value'), '3')
+  assert.equal(await inspect('document.querySelectorAll("#tab-cache-count option").length'), 11)
+  await inspect('(() => { const button = document.querySelector("#manage-shown").parentElement.querySelector(".manage-move"); button.focus(); button.click(); })()')
+  assert.equal(await inspect('document.activeElement.closest(".manage-column")?.querySelector("h4").id'), 'manage-hidden', 'Keyboard focus follows the transferred item')
+  assert.equal(await inspect('document.querySelector("#manage-hidden").parentElement.querySelectorAll("li").length'), 1)
+  const transferCount = await inspect('document.querySelectorAll(".manage-transfer-item").length')
+  await inspect('[...document.querySelectorAll(".manage-tools button")].find(e => e.textContent.includes("交换")).click()')
+  assert.equal(await inspect('document.querySelector("#manage-shown").parentElement.querySelectorAll("li").length'), 1)
+  await inspect('[...document.querySelectorAll(".manage-tools button")].find(e => e.textContent.includes("重置")).click()')
+  assert.equal(await inspect('document.querySelector("#manage-shown").parentElement.querySelectorAll("li").length'), transferCount)
+  if (process.env.WORKBENCH_SCREENSHOTS) {
+   win.setSize(1100, 800)
+   for (const theme of ['light', 'dark']) {
+    await inspect('document.documentElement.dataset.theme = ' + JSON.stringify(theme))
+    await inspect('new Promise(resolve => setTimeout(resolve, 220))')
+    fs.writeFileSync(path.join(process.env.WORKBENCH_SCREENSHOTS, 'manage-' + theme + '.png'), (await win.webContents.capturePage()).toPNG())
+   }
+   win.setSize(1024, 680)
+   await inspect('document.documentElement.dataset.theme = "light"; new Promise(resolve => setTimeout(resolve, 100))')
+   fs.writeFileSync(path.join(process.env.WORKBENCH_SCREENSHOTS, 'manage-compact.png'), (await win.webContents.capturePage()).toPNG())
+   await inspect('const body = document.querySelector(".manage-body"); body.scrollTop = body.scrollHeight; document.querySelector("#tab-cache-count").focus(); new Promise(resolve => requestAnimationFrame(resolve))')
+   assert.equal(await inspect('(() => { const r = document.querySelector("#tab-cache-count").getBoundingClientRect(), body = document.querySelector(".manage-body").getBoundingClientRect(); return r.top >= body.top - 1 && r.bottom <= body.bottom + 1 })()'), true, 'Compact cache setting is fully reachable after scrolling')
+   fs.writeFileSync(path.join(process.env.WORKBENCH_SCREENSHOTS, 'manage-compact-bottom.png'), (await win.webContents.capturePage()).toPNG())
+  }
+  await doneSettings()
+  const cacheStart = requests.length
+  const residents = () => {
+   const ids = new Set()
+   for (const request of requests.slice(cacheStart)) { if (request.type === 'open') ids.add(request.tabId); if (request.action === 'close') ids.delete(request.tabId) }
+   return ids
+  }
+  const home = () => inspect('document.querySelector(".tab--home").click()')
+  const openNamed = async name => {
+   await home()
+   await inspect('[...document.querySelectorAll(".site-card")].find(e => e.textContent.trim() === ' + JSON.stringify(name) + ').click()')
+  }
+  for (const name of ['ChatGPT', 'Gemini', 'DeepSeek', 'Kimi']) await openNamed(name)
+  assert.equal(residents().size, 4, 'Current page plus three background pages')
+  await home()
+  await wait(() => residents().size === 3)
+  assert.equal(residents().has('chatgpt'), false, 'Least recently used page released')
+  await inspect('document.querySelector("[data-tab-id=gemini]").click()')
+  await settings(); await setCache(1); await doneSettings()
+  await wait(() => residents().size === 2)
+  assert.deepEqual([...residents()].sort(), ['gemini', 'kimi'])
+  await settings(); await setCache(0); await doneSettings()
+  await wait(() => residents().size === 1)
+  await home()
+  await wait(() => residents().size === 0)
+  assert.equal(await inspect('document.querySelectorAll(".tab--site").length'), 4, 'Released pages retain tab entries')
+  const beforeHomes = requests.filter(request => request.type === 'open').length
+  await inspect('for (let i = 0; i < 12; i++) document.querySelector(".new-tab-button").click()')
+  assert.equal(requests.filter(request => request.type === 'open').length, beforeHomes, 'Home entries create no browser pages')
+  await inspect('document.querySelector("[data-tab-id=chatgpt]").click()')
+  await wait(() => residents().has('chatgpt'))
+  await settings(); await setCache(10)
+  await inspect('document.querySelector("#external-switch").click()')
+  await wait(() => requests.some(request => request.type === 'preferences' && request.openNewWindowInBrowser))
+  await doneSettings()
+  await win.loadURL(url)
+  await wait(() => inspect('!!document.querySelector(".site-card")'))
+  await settings()
+  assert.equal(await inspect('document.querySelector("#tab-cache-count").value'), '10')
+  assert.equal(await inspect('document.querySelector("#external-switch").getAttribute("aria-checked")'), 'true')
   console.log('RESULT=' + JSON.stringify({ imported, saved: true, restored: true, browser: true, legacyReads, iconsCached: true, uploadedFirst: true, fallback: true }))
  } catch (error) { console.error(error); process.exitCode = 1 }
  finally { win?.destroy(); server?.close(); app.quit() }

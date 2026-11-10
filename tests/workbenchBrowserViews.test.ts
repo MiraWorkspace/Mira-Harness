@@ -38,6 +38,24 @@ function fixture() {
 beforeEach(() => { mock.views.length = 0; mock.windows.length = 0; mock.nextLoad = undefined; mock.openExternal.mockClear() })
 
 describe('Workbench browser views', () => {
+  it('applies the external-link preference to existing tabs and rejects unsafe popup URLs', async () => {
+    const { browser, app } = fixture()
+    browser.open('one', 'https://example.com/')
+    const handler = mock.views[0].webContents.setWindowOpenHandler.mock.calls[0][0]
+    browser.setPreferences(true)
+    for (const disposition of ['new-window', 'foreground-tab']) expect(handler({ url: 'https://example.com/new', disposition })).toEqual({ action: 'deny' })
+    expect(mock.openExternal).toHaveBeenCalledTimes(2)
+    expect(app.send).not.toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ type: 'open-tab' }))
+    expect(handler({ url: 'file:///private', disposition: 'new-window' })).toEqual({ action: 'deny' })
+    expect(mock.openExternal).toHaveBeenCalledTimes(2)
+    mock.openExternal.mockRejectedValueOnce(new Error('no browser'))
+    handler({ url: 'https://example.com/new', disposition: 'foreground-tab' })
+    await Promise.resolve()
+    expect(app.send).toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ type: 'external-error' }))
+    browser.setPreferences(false)
+    expect(handler({ url: 'https://example.com/login', disposition: 'new-window' })).toMatchObject({ action: 'allow' })
+    browser.dispose()
+  })
   it('opens only the current validated tab URL in the system browser', async () => {
     const { browser } = fixture()
     browser.open('one', 'https://example.com/')

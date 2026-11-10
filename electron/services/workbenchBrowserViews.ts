@@ -11,6 +11,7 @@ export class WorkbenchBrowserViews {
   private readonly tabs = new Map<string, Tab>()
   private appBounds: Bounds = { x: 0, y: 0, width: 0, height: 0 }
   private layout?: { tabId: string; bounds: Bounds; visible: boolean }
+  private openNewWindowInBrowser = false
 
   constructor(private readonly owner: BrowserWindow, private readonly app: WebContents, private readonly viewAdded = () => {}, private readonly detachedPreloadPath?: string) {}
 
@@ -40,7 +41,11 @@ export class WorkbenchBrowserViews {
     contents.once('destroyed', unbindShortcuts)
     this.tabs.set(tabId, tab)
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-    configureWorkbenchPopupHandling(contents, url => this.emit({ type: 'open-tab', url }))
+    configureWorkbenchPopupHandling(contents, url => this.emit({ type: 'open-tab', url }), url => {
+      if (!this.openNewWindowInBrowser) return false
+      void shell.openExternal(url).catch(() => this.emit({ type: 'external-error', message: '无法打开系统默认浏览器，请检查浏览器设置后重试。' }))
+      return true
+    })
     contents.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     contents.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     contents.on('did-start-loading', () => { tab.error = undefined; this.state(tabId) })
@@ -88,6 +93,10 @@ export class WorkbenchBrowserViews {
   }
 
   setAppBounds(bounds: Bounds) { this.appBounds = bounds; this.sync() }
+  setPreferences(openNewWindowInBrowser: boolean) {
+    if (typeof openNewWindowInBrowser !== 'boolean') throw new Error('浏览器偏好设置无效')
+    this.openNewWindowInBrowser = openNewWindowInBrowser
+  }
   detach(tabId: string, dragOffset?: number, presentation?: unknown) {
     const tab = this.tab(tabId)
     if (tab.detached) return

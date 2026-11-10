@@ -36,9 +36,10 @@ export function isAllowedHostedBrowserUrl(value: string) {
   }
 }
 
-export function configureWorkbenchPopupHandling(contents: Electron.WebContents, openTab: (url: string) => void) {
+export function configureWorkbenchPopupHandling(contents: Electron.WebContents, openTab: (url: string) => void, openExternal?: (url: string) => boolean) {
   contents.setWindowOpenHandler(({ url, disposition }) => {
     if (!isAllowedHostedBrowserUrl(url)) return { action: 'deny' }
+    if (openExternal?.(url)) return { action: 'deny' }
     if (isWorkbenchPopupDisposition(disposition)) return {
       action: 'allow',
       overrideBrowserWindowOptions: { width: 560, height: 720, minWidth: 400, minHeight: 480, webPreferences: { partition: WORKBENCH_BROWSER_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } },
@@ -47,7 +48,7 @@ export function configureWorkbenchPopupHandling(contents: Electron.WebContents, 
     return { action: 'deny' }
   })
   contents.on('did-create-window', popup => {
-    popup.webContents.setWindowOpenHandler(({ url }) => isAllowedHostedBrowserUrl(url) ? { action: 'allow' } : { action: 'deny' })
+    popup.webContents.setWindowOpenHandler(({ url }) => isAllowedHostedBrowserUrl(url) && !openExternal?.(url) ? { action: 'allow' } : { action: 'deny' })
     popup.webContents.on('will-navigate', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     popup.webContents.on('will-redirect', event => { if (!isAllowedHostedBrowserUrl(event.url)) event.preventDefault() })
     popup.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
