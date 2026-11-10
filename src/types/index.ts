@@ -182,6 +182,8 @@ export interface PlatformApi {
   setTitleBarChrome(chrome: { color: string; symbolColor: string; height?: number }): Promise<void>
   openResourceManager(): Promise<void>
   windowCommand(action: string): Promise<void>
+  isWindowMaximized?(): Promise<boolean>
+  onWindowMaximizedChanged?(listener: (maximized: boolean) => void): () => void
   getDesktopZoomFactor?(): number
   onDesktopZoomChanged?(listener: (factor: number) => void): () => void
   isFullScreen?(): boolean

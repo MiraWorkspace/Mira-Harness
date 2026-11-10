@@ -13,6 +13,7 @@ vi.mock('electron', async () => {
     once(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
     isDestroyed = () => false
     isFullScreen = () => false
+    isMaximized = vi.fn(() => false)
     getContentSize = () => [800, 600]
     setAlwaysOnTop = vi.fn()
     setMenuBarVisibility = vi.fn()

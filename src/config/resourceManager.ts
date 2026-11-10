@@ -43,6 +43,9 @@ export interface MiraNetworkSnapshot {
   dropped: number
 }
 export interface MiraResourceBridge {
+  isWindows: boolean
+  windowCommand(action: 'state' | 'minimize' | 'maximize' | 'close'): Promise<boolean>
+  onMaximized(callback: (maximized: boolean) => void): () => void
   getSnapshot(): Promise<MiraResourceSnapshot>
   storage: { scan(): Promise<MiraStorageSnapshot>; cancel(): Promise<void>; reveal(path: string): Promise<void>; clean(id: string): Promise<boolean> }
   network: { getSnapshot(): Promise<MiraNetworkSnapshot>; clear(): Promise<void> }

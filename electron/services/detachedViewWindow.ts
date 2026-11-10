@@ -1,8 +1,8 @@
 import { join } from 'node:path'
-import { BrowserWindow, nativeTheme, screen, type WebContents, type WebContentsView } from 'electron'
+import { BrowserWindow, screen, type WebContents, type WebContentsView } from 'electron'
 
 type BrowserAction = 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'navigate'
-type DetachedAction = 'pin' | 'reattach' | BrowserAction | { type: 'navigate'; url: string }
+type DetachedAction = 'pin' | 'reattach' | 'minimize' | 'maximize' | 'close' | BrowserAction | { type: 'navigate'; url: string }
 type BrowserState = { url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string; faviconUrl?: string | null }
 type DetachedOptions = { owner: BrowserWindow; view: WebContentsView; title: string; presentation?: unknown; kind?: 'website' | 'miniapp'; preloadPath?: string; dragOffset?: number; dragSource?: WebContents; browserCommand?: (action: BrowserAction, url?: string) => void | Promise<void>; onReattach: () => void }
 
@@ -30,11 +30,16 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   header{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #e5e7ea;background:#fff;-webkit-app-region:drag}
   body.mac header{padding-left:80px}
   body.mac.fullscreen header{padding-left:16px}
-  body.windows header{padding-right:150px}
-  body.windows.fullscreen header{padding-right:12px}
+  .window-controls{display:flex;gap:2px;margin-left:-8px;-webkit-app-region:no-drag}
+  .window-controls button{display:grid;width:30px;height:30px;padding:0;place-items:center;border:0;border-radius:4px;background:transparent;color:#6c756e;cursor:pointer}
+  .window-controls button:hover,.window-controls button:focus-visible{background:#f0f2f3;color:#27302a;outline:none}
+  .window-controls button[data-action=close]:hover,.window-controls button[data-action=close]:focus-visible{background:#c42b1c;color:#fff}
+  .window-controls [hidden]{display:none}
+  body.windows.fullscreen .window-controls{display:none}
   .identity-icon{width:18px;height:18px;flex:none;display:grid;place-items:center;color:#6c756e}.identity-icon img,.identity-icon svg{width:18px;height:18px;object-fit:contain}.identity-icon img[hidden]{display:none}.identity-icon img:not([hidden])+svg{display:none}
   .title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
   .actions{position:relative;display:flex;gap:4px;-webkit-app-region:no-drag}.actions button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:#6c756e;cursor:pointer;font-size:17px;line-height:1;display:grid;place-items:center}
+  body.windows .actions{gap:2px}body.windows .actions button svg{width:14px;height:14px}
   .tooltip{position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:5px 8px;border-radius:5px;background:#27302a;color:#fff;font-size:12px;white-space:nowrap;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .12s ease;z-index:1}
   .action:hover .tooltip,.action:focus-within .tooltip{visibility:visible;opacity:1}
   .actions button:focus-visible{outline:2px solid #678a78;outline-offset:1px}
@@ -46,7 +51,7 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   .address-bar{display:flex;height:30px;min-width:0;flex:1;align-items:center;gap:8px;padding:0 12px;border:1px solid #eceef0;border-radius:6px;background:#f8f9fa;color:#858d94}
   .address-bar:focus-within{border-color:#678a78}.address-bar>svg{flex:none}.address-bar input{width:100%;min-width:0;padding:0;border:0;outline:0;background:transparent;color:#27302a;caret-color:#678a78;font:inherit}
   @media(prefers-color-scheme:dark){.browser-toolbar{border-color:#47484f;background:#303030}.address-bar{border-color:#47484f;background:#292a2e}.address-bar input{color:#f2f3f4}.browser-toolbar button{color:#b7b7bf}.browser-toolbar button:hover{background:#38393f;color:#fff}.browser-toolbar button:disabled{color:#666870;background:transparent}}
-  @media(prefers-color-scheme:dark){:root{color:#f2f3f4;background:#292a2e;color-scheme:dark}header{border-color:#47484f;background:#303030}.actions button{color:#b7b7bf}.actions button:hover{background:#38393f;color:#fff}.actions button[aria-pressed=true]{color:#a8ccb8;background:#263b31}}
+  @media(prefers-color-scheme:dark){:root{color:#f2f3f4;background:#292a2e;color-scheme:dark}header{border-color:#47484f;background:#303030}.actions button,.window-controls button{color:#b7b7bf}.actions button:hover,.window-controls button:hover{background:#38393f;color:#fff}.actions button[aria-pressed=true]{color:#a8ccb8;background:#263b31}.window-controls button[data-action=close]:hover,.window-controls button[data-action=close]:focus-visible{background:#c42b1c;color:#fff}}
   </style></head><body class="${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : ''}"><header><span class="identity-icon"><img${icon ? ` src="${escapeHtml(icon)}"` : ''} hidden alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${fallback}</svg></span><span class="title">${escapeHtml(title || '网页')}</span><div class="actions"><span class="action"><button type="button" data-action="pin" aria-label="固定窗口" aria-pressed="false" aria-describedby="pin-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5a4 4 0 0 1-2 3l-1 1v2h14v-2l-1-1a4 4 0 0 1-2-3Z"/><path d="M12 15v7"/></svg></button><span id="pin-tooltip" class="tooltip" role="tooltip">固定窗口</span></span><span class="action"><button type="button" data-action="reattach" aria-label="回到主窗口" aria-describedby="reattach-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9m8 5-3 3m0-3v3h3"/></svg></button><span id="reattach-tooltip" class="tooltip" role="tooltip">回到主窗口</span></span></div></header>${kind === 'website' ? browserToolbar() : ''}<script>
   const identityIcon = document.querySelector('.identity-icon img');
   identityIcon.addEventListener('load', () => { identityIcon.hidden = false });
@@ -74,6 +79,8 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
       if (state.icon) identityIcon.src = state.icon; else identityIcon.removeAttribute('src');
     }
     if (typeof state.fullScreen === 'boolean') document.body.classList.toggle('fullscreen', state.fullScreen);
+    const maximize = document.querySelector('[data-action=maximize]');
+    if (maximize && typeof state.maximized === 'boolean') { maximize.title = state.maximized ? '还原' : '最大化'; maximize.setAttribute('aria-label', maximize.title); maximize.querySelector('.maximize-icon').hidden = state.maximized; maximize.querySelector('.restore-icon').hidden = !state.maximized; }
     if (address && state.browser) {
       const browser = state.browser; currentUrl = browser.url;
       if (document.activeElement !== address) address.value = currentUrl;
@@ -86,7 +93,7 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
     }
     if (address && state.error) { address.setCustomValidity(state.error); address.reportValidity(); }
     const button = document.querySelector('[data-action=pin]'); if (button && typeof state.pinned === 'boolean') { button.setAttribute('aria-pressed', String(Boolean(state.pinned))); button.setAttribute('aria-label', state.pinned ? '取消固定窗口' : '固定窗口'); document.querySelector('#pin-tooltip').textContent = button.getAttribute('aria-label'); } });
-  </script></body></html>`
+  </script></body></html>`.replace('</header>', `${process.platform === 'win32' ? `<div class="window-controls" aria-label="窗口控制"><button type="button" data-action="minimize" title="最小化" aria-label="最小化"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button><button type="button" data-action="maximize" title="最大化" aria-label="最大化"><svg class="maximize-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg><svg class="restore-icon" hidden width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button><button type="button" data-action="close" title="关闭" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>` : ''}</header>`)
 }
 
 export class DetachedViewWindow {
@@ -111,22 +118,21 @@ export class DetachedViewWindow {
       minHeight: height,
       title,
       ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 12, y: 17 } } : {}),
-      ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: nativeTheme.shouldUseDarkColors ? '#303030' : '#ffffff', symbolColor: nativeTheme.shouldUseDarkColors ? '#b7b7bf' : '#6c756e', height: 48 }, autoHideMenuBar: true } : {}),
+      ...(process.platform === 'win32' ? { frame: false, titleBarStyle: 'hidden' as const, autoHideMenuBar: true } : {}),
       show: false,
       opacity: options.dragOffset === undefined ? 0 : 1,
       webPreferences: { preload: options.preloadPath || join(__dirname, '../preload/detachedView.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
     if (process.platform === 'win32') {
       this.window.setMenuBarVisibility(false)
-      const updateOverlay = () => this.window.setTitleBarOverlay({ color: nativeTheme.shouldUseDarkColors ? '#303030' : '#ffffff', symbolColor: nativeTheme.shouldUseDarkColors ? '#b7b7bf' : '#6c756e', height: 48 })
-      nativeTheme.on('updated', updateOverlay)
-      this.window.once('closed', () => nativeTheme.removeListener('updated', updateOverlay))
     }
     windows.set(this.window.webContents.id, this)
     this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.window.webContents.on('will-navigate', event => event.preventDefault())
     this.window.webContents.on('did-finish-load', () => this.sendState())
     this.window.on('resize', () => this.layout())
+    this.window.on('maximize', () => this.sendState())
+    this.window.on('unmaximize', () => this.sendState())
     this.window.on('enter-full-screen', () => { this.sendState(); this.layout() })
     this.window.on('leave-full-screen', () => { this.sendState(); this.layout() })
     this.window.on('close', () => {
@@ -207,6 +213,9 @@ export class DetachedViewWindow {
       this.window.setAlwaysOnTop(this.pinned)
       this.sendState()
     } else if (action === 'reattach') this.reattach()
+    else if (action === 'minimize') this.window.minimize()
+    else if (action === 'maximize') this.window.isMaximized() ? this.window.unmaximize() : this.window.maximize()
+    else if (action === 'close') this.window.close()
     else if (this.options.browserCommand) {
       const command = typeof action === 'string' ? action : action.type
       const url = typeof action === 'object' ? action.url : undefined
@@ -225,7 +234,7 @@ export class DetachedViewWindow {
   }
 
   private sendState() {
-    if (!this.window.isDestroyed()) this.window.webContents.send('mira:detached-state', { pinned: this.pinned, browser: this.browserState, icon: this.icon || validIcon(this.browserState?.faviconUrl), fullScreen: this.window.isFullScreen() })
+    if (!this.window.isDestroyed()) this.window.webContents.send('mira:detached-state', { pinned: this.pinned, browser: this.browserState, icon: this.icon || validIcon(this.browserState?.faviconUrl), fullScreen: this.window.isFullScreen(), maximized: this.window.isMaximized() })
   }
 
   dispose() {
@@ -251,6 +260,6 @@ export class DetachedViewWindow {
 export function handleDetachedViewCommand(sender: WebContents, action: unknown) {
   const window = windows.get(sender.id)
   if (!window) return
-  if (typeof action === 'string' && ['pin', 'reattach', 'back', 'forward', 'reload', 'stop', 'external'].includes(action)) window.command(action as DetachedAction)
+  if (typeof action === 'string' && ['pin', 'reattach', 'minimize', 'maximize', 'close', 'back', 'forward', 'reload', 'stop', 'external'].includes(action)) window.command(action as DetachedAction)
   else if (action && typeof action === 'object' && (action as Record<string, unknown>).type === 'navigate' && typeof (action as Record<string, unknown>).url === 'string') window.command(action as { type: 'navigate'; url: string })
 }

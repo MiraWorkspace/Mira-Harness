@@ -42,10 +42,12 @@ export function openResourceManager() {
   const window = new BrowserWindow({
     width: 1040, height: 760, minWidth: 640, minHeight: 420,
     title: 'Mira 资源管理器', backgroundColor: '#1e1e1e', show: false,
-    ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', height: 48 }, autoHideMenuBar: true } : {}),
+    ...(process.platform === 'win32' ? { frame: false, titleBarStyle: 'hidden' as const, autoHideMenuBar: true } : {}),
     webPreferences: { preload: join(__dirname, '../preload/resourceManager.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   })
   if (process.platform === 'win32') window.setMenu(null)
+  window.on('maximize', () => window.webContents.send('window:resource-maximized', true))
+  window.on('unmaximize', () => window.webContents.send('window:resource-maximized', false))
   instance = window
   network.start()
   const appSession = window.webContents.session
@@ -71,6 +73,17 @@ export function openResourceManager() {
 }
 
 export function isResourceManagerWindow(window: BrowserWindow) { return instance === window }
+
+export function resourceWindowCommand(senderId: number, action: unknown) {
+  authorizeResources(senderId)
+  const window = instance!
+  if (action === 'state') return window.isMaximized()
+  if (action === 'minimize') window.minimize()
+  else if (action === 'maximize') window.isMaximized() ? window.unmaximize() : window.maximize()
+  else if (action === 'close') window.close()
+  else throw new Error('窗口操作无效')
+  return false
+}
 
 export async function getResourceSnapshot(senderId: number): Promise<MiraResourceSnapshot> {
   authorizeResources(senderId)

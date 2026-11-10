@@ -152,6 +152,8 @@ export function createMainWindow(options: WindowManagerOptions) {
     ...(isMac ? { trafficLightPosition: miraTrafficLightPosition(1.1 ** miraZoomLevel(options.getDesktopZoomLevel?.())) } : {}),
     webPreferences: { preload: join(__dirname, '../preload/preload.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, zoomFactor: 1.1 ** miraZoomLevel(options.getDesktopZoomLevel?.()) },
   })
+  window.on('maximize', () => window.webContents.send('window:maximized-changed', true))
+  window.on('unmaximize', () => window.webContents.send('window:maximized-changed', false))
   setupMiraTextContextMenu(window)
   window.on('close', event => {
     if (options.saveMainWindowState) options.saveMainWindowState({ bounds: window.getNormalBounds(), maximized: window.isMaximized(), fullScreen: window.isFullScreen() })

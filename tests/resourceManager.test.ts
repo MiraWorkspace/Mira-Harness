@@ -11,11 +11,12 @@ vi.mock('electron', () => ({
     id = state.windows.length + 1
     destroyed = false
     constructor(public options: any) { state.windows.push(this) }
-    webContents = { id: 100 + this.id, getOSProcessId: () => 1000 + this.id, session: { webRequest: { onBeforeRequest: vi.fn() } }, on: vi.fn(), setWindowOpenHandler: vi.fn() }
+    webContents = { id: 100 + this.id, getOSProcessId: () => 1000 + this.id, session: { webRequest: { onBeforeRequest: vi.fn() } }, on: vi.fn(), send: vi.fn(), setWindowOpenHandler: vi.fn() }
     on(event: string, callback: Function) { this.callbacks[event] = callback }
     once(event: string, callback: Function) { this.callbacks[event] = callback }
     isDestroyed() { return this.destroyed }
     isMinimized() { return true }
+    isMaximized = vi.fn(() => false); minimize = vi.fn(); maximize = vi.fn(); unmaximize = vi.fn(); close = vi.fn()
     restore = vi.fn(); show = vi.fn(); focus = vi.fn(); loadFile = vi.fn(); loadURL = vi.fn(); setMenu = vi.fn()
   },
 }))
@@ -28,13 +29,25 @@ it.each(['win32', 'darwin', 'linux'])('configures the title bar on %s', async pl
     service.openResourceManager()
     const window = state.windows[0]
     if (platform === 'win32') {
-      expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: 48 }, autoHideMenuBar: true })
+      expect(window.options).toMatchObject({ frame: false, titleBarStyle: 'hidden', autoHideMenuBar: true })
       expect(window.setMenu).toHaveBeenCalledWith(null)
     } else {
       expect(window.options.titleBarStyle).toBeUndefined()
       expect(window.setMenu).not.toHaveBeenCalled()
     }
   } finally { vi.unstubAllGlobals() }
+})
+it('limits resource window commands to the resource window', async () => {
+  const service = await import('../electron/bootstrap/resourceManager')
+  service.openResourceManager()
+  const window = state.windows[0]
+  expect(() => service.resourceWindowCommand(999, 'close')).toThrow()
+  expect(() => service.resourceWindowCommand(101, 'quit')).toThrow()
+  service.resourceWindowCommand(101, 'minimize'); expect(window.minimize).toHaveBeenCalledOnce()
+  service.resourceWindowCommand(101, 'maximize'); expect(window.maximize).toHaveBeenCalledOnce()
+  window.isMaximized.mockReturnValue(true)
+  service.resourceWindowCommand(101, 'maximize'); expect(window.unmaximize).toHaveBeenCalledOnce()
+  service.resourceWindowCommand(101, 'close'); expect(window.close).toHaveBeenCalledOnce()
 })
 it('opens one isolated window, restores it, closes and reopens, and blocks reopening during exit', async () => {
   const service = await import('../electron/bootstrap/resourceManager')

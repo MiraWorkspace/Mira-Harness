@@ -83,8 +83,17 @@ app.whenReady().then(async () => {
   if (process.platform === 'win32') {
    if (detachedWindow.isMenuBarVisible()) throw Error('Native menu bar is visible')
    if (detachedWindow.getContentBounds().y - detachedWindow.getBounds().y > 10) throw Error('Native title bar still takes a separate row')
-   const controls = await inspectToolbar('(() => { const header = document.querySelector("header"), actions = document.querySelector(".actions"); return { padding: getComputedStyle(header).paddingRight, right: actions.getBoundingClientRect().right, width: innerWidth } })()')
-   if (controls.padding !== '150px' || controls.width - controls.right < 150) throw Error('Window buttons overlap detached actions')
+   const controls = await inspectToolbar('(() => { const actions = document.querySelector(".actions").getBoundingClientRect(), controls = document.querySelector(".window-controls").getBoundingClientRect(); return { actionsRight: actions.right, controlsLeft: controls.left, count: document.querySelectorAll(".window-controls button").length } })()')
+   if (controls.count !== 3 || controls.actionsRight > controls.controlsLeft) throw Error('Window buttons overlap detached actions')
+   await inspectToolbar('document.querySelector("[data-action=maximize]").click()')
+   await wait(() => detachedWindow.isMaximized())
+   await wait(() => inspectToolbar('document.querySelector("[data-action=maximize]").getAttribute("aria-label") === "还原"'))
+   await inspectToolbar('document.querySelector("[data-action=maximize]").click()')
+   await wait(() => !detachedWindow.isMaximized())
+   await wait(() => inspectToolbar('document.querySelector("[data-action=maximize]").getAttribute("aria-label") === "最大化"'))
+   await inspectToolbar('document.querySelector("[data-action=minimize]").click()')
+   await wait(() => detachedWindow.isMinimized())
+   detachedWindow.restore()
   }
   if (process.platform === 'darwin') {
    if (detachedWindow.getContentBounds().y !== detachedWindow.getBounds().y) throw Error('Native title bar still takes a separate row')
@@ -196,7 +205,10 @@ app.whenReady().then(async () => {
   await wait(() => lateWindow.isDestroyed())
   browser.control('one', 'detach')
   const closedWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
-  closedWindow.close()
+  if (process.platform === 'win32') {
+   await wait(() => closedWindow.webContents.executeJavaScript('!!document.querySelector("[data-action=close]")'))
+   await closedWindow.webContents.executeJavaScript('document.querySelector("[data-action=close]").click()')
+  } else closedWindow.close()
   await wait(() => closedWindow.isDestroyed())
   if (!owner.contentView.children.includes(view) || guest.isDestroyed()) throw Error('Closing detached window destroyed page')
   browser.control('one', 'detach')

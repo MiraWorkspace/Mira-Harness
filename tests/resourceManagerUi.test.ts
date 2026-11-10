@@ -4,6 +4,20 @@ import { createApp, nextTick, type App } from 'vue'
 import ResourceManager from '../src/resource-manager/ResourceManager.vue'
 let app: App | undefined, container: HTMLDivElement | undefined
 afterEach(() => { app?.unmount(); container?.remove(); vi.unstubAllGlobals(); vi.useRealTimers() })
+it('renders Windows controls and follows maximized state', async () => {
+  const windowCommand = vi.fn(async (_action: string) => false), unsubscribe = vi.fn()
+  let updateMaximized: (value: boolean) => void = () => {}
+  vi.stubGlobal('window', Object.assign(window, { resourceManager: { isWindows: true, windowCommand, onMaximized: (callback: typeof updateMaximized) => { updateMaximized = callback; return unsubscribe }, getSnapshot: vi.fn(async () => ({ system: {}, processes: [] })), storage: { cancel: vi.fn() }, network: {} } }))
+  container = document.createElement('div'); document.body.append(container); app = createApp(ResourceManager); app.mount(container)
+  await nextTick()
+  container.querySelector<HTMLButtonElement>('[aria-label="最小化"]')!.click()
+  container.querySelector<HTMLButtonElement>('[aria-label="最大化"]')!.click()
+  updateMaximized(true); await nextTick()
+  expect(container.querySelector('[aria-label="还原"]')).not.toBeNull()
+  container.querySelector<HTMLButtonElement>('[aria-label="关闭"]')!.click()
+  expect(windowCommand.mock.calls.map(call => call[0])).toEqual(['state', 'minimize', 'maximize', 'close'])
+  app.unmount(); app = undefined; expect(unsubscribe).toHaveBeenCalledOnce()
+})
 it('shows process purposes and plugin state, keeps groups collapsible, and pauses usage polling on storage', async () => {
   vi.useFakeTimers()
   const snapshot = { system: { cpuPercent: 20, memoryUsedBytes: 4096, memoryTotalBytes: 8192 }, processes: [{ pid: 1, name: 'Mira 主进程', cpuPercent: 2, memoryBytes: 2048, detail: '任务调度与数据管理' }, { pid: 2, name: '共享页面进程', category: 'ui', cpuPercent: 1, memoryBytes: 4096, views: [{ id: 1, name: '设置', status: '正在交互', detail: '/settings' }, { id: 2, name: '任务界面', status: '后台', detail: '/apps/mira-harness/' }] }], plugins: [{ id: 'review@local', name: '代码审查', category: 'community-plugin', status: '已启用 · 待调用', detail: '2 Skill · 按需执行', pids: [] }] }

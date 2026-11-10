@@ -1,9 +1,14 @@
 <template>
   <main class="resource-manager" data-testid="resource-manager">
-    <header class="resource-header">
+    <header class="resource-header" :class="{ 'resource-header--windows': bridge.isWindows }">
       <div class="resource-heading"><h1>资源管理器</h1><div v-if="usageActive" class="subtle tiny">{{ snapshot ? `${snapshot.processes.length} 个进程 · ${snapshot.plugins?.length ?? 0} 个插件` : '正在读取资源占用...' }}</div></div>
       <div role="tablist" aria-label="资源类型" class="resource-tabs">
         <button v-for="item in tabs" :id="`tab-${item.id}`" :key="item.id" role="tab" :aria-selected="tab === item.id" :tabindex="tab === item.id ? 0 : -1" aria-controls="resource-content" @click="tab = item.id" @keydown="moveTab($event, item.id)">{{ item.label }}</button>
+      </div>
+      <div v-if="bridge.isWindows" class="resource-window-controls" aria-label="窗口控制">
+        <button type="button" title="最小化" aria-label="最小化" @click="bridge.windowCommand('minimize')"><Minus :size="14" /></button>
+        <button type="button" :title="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="bridge.windowCommand('maximize')"><Copy v-if="maximized" :size="13" /><Square v-else :size="12" /></button>
+        <button type="button" class="resource-window-close" title="关闭" aria-label="关闭" @click="bridge.windowCommand('close')"><X :size="14" /></button>
       </div>
     </header>
     <div id="resource-content" role="tabpanel" :aria-labelledby="`tab-${tab}`" class="resource-content">
@@ -51,13 +56,17 @@
 </template>
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, Copy, Minus, Square, X } from 'lucide-vue-next'
 import type { MiraResourceBridge, MiraResourceSnapshot } from '../config/resourceManager'
 import { clampPercent, formatBytes, formatPercent, groupResourceUsage } from './resourceUsageView'
 import StorageSection from './StorageSection.vue'
 import NetworkSection from './NetworkSection.vue'
 import './resource-manager.css'
 const bridge = (window as unknown as { resourceManager: MiraResourceBridge }).resourceManager
+const maximized = ref(false)
+const stopMaximized = bridge.isWindows ? bridge.onMaximized(value => { maximized.value = value }) : undefined
+if (bridge.isWindows) void bridge.windowCommand('state').then(value => { maximized.value = value })
+onUnmounted(() => stopMaximized?.())
 const tabs = [{ id: 'cpu', label: 'CPU' }, { id: 'memory', label: '内存' }, { id: 'storage', label: '存储' }, { id: 'network', label: '网络' }] as const
 type Tab = typeof tabs[number]['id']
 const tab = ref<Tab>('cpu')

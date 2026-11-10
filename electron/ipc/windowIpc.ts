@@ -1,6 +1,6 @@
-import { app, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { handleWindowCommand } from '../bootstrap/windowManager'
-import { authorizeResources, cleanResourceStorage, cancelResourceStorage, clearResourceNetwork, getResourceNetwork, getResourceStorage, revealResourceStorage, getResourceSnapshot, openResourceManager, stopResourceManager } from '../bootstrap/resourceManager'
+import { authorizeResources, cleanResourceStorage, cancelResourceStorage, clearResourceNetwork, getResourceNetwork, getResourceStorage, revealResourceStorage, getResourceSnapshot, openResourceManager, resourceWindowCommand, stopResourceManager } from '../bootstrap/resourceManager'
 
 export function registerWindowIpcHandlers() {
   app.on('before-quit', stopResourceManager)
@@ -17,6 +17,11 @@ export function registerWindowIpcHandlers() {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error('资源采样不可用')
     return getResourceSnapshot(event.sender.id)
   })
+  ipcMain.handle('window:resource-command', (event, action: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error('窗口操作不可用')
+    return resourceWindowCommand(event.sender.id, action)
+  })
   ipcMain.handle('window:set-titlebar-chrome', () => {})
+  ipcMain.handle('window:is-maximized', event => BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false)
   ipcMain.handle('window:command', (event, action: string) => handleWindowCommand(event, action))
 }

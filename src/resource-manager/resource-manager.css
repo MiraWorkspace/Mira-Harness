@@ -26,10 +26,16 @@ button:focus-visible, input:focus-visible { outline: none; box-shadow: none; }
 button { border: 0; background: transparent; }
 h1, p { margin: 0; }
 .resource-manager { height: 100vh; display: flex; flex-direction: column; min-height: 0; }
-.resource-header { height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px; padding-right: calc(16px + 100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%)); border-bottom: 1px solid var(--border); background: var(--header); app-region: drag; }
+.resource-header { height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--header); }
+.resource-header--windows { padding-right: 8px; -webkit-app-region: drag; }
 .resource-heading { min-width: 0; }
 h1 { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.resource-tabs { display: flex; gap: 4px; app-region: no-drag; }
+.resource-tabs { display: flex; gap: 4px; -webkit-app-region: no-drag; }
+.resource-header--windows .resource-tabs { margin-left: auto; }
+.resource-window-controls { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.resource-window-controls button { display: grid; width: 30px; height: 30px; padding: 0; place-items: center; border-radius: 4px; color: var(--subtle); }
+.resource-window-controls button:hover { color: var(--text); background: var(--hover); }
+.resource-window-controls .resource-window-close:hover { color: #fff; background: #c42b1c; }
 .resource-tabs button { height: 32px; flex: none; padding: 0 12px; border-radius: 999px; }
 .resource-tabs button[aria-selected=true] { background: var(--selected); }
 .resource-tabs button:hover { background: var(--hover); }

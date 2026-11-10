@@ -3,23 +3,31 @@
     <div v-if="dragRegion" class="windows-titlebar__drag-region" aria-hidden="true" />
 
     <div class="windows-titlebar__window-controls" aria-label="窗口控制">
-      <button type="button" class="windows-titlebar__window-control" aria-label="最小化" @click="runWindowCommand('minimize')">
-        <span class="windows-titlebar__glyph windows-titlebar__glyph--minimize" />
+      <button type="button" class="windows-titlebar__window-control" title="最小化" aria-label="最小化" @click="runWindowCommand('minimize')">
+        <Minus :size="14" />
       </button>
-      <button type="button" class="windows-titlebar__window-control" aria-label="最大化或还原" @click="runWindowCommand('maximize')">
-        <span class="windows-titlebar__glyph windows-titlebar__glyph--maximize" />
+      <button type="button" class="windows-titlebar__window-control" :title="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="runWindowCommand('maximize')">
+        <Copy v-if="maximized" :size="13" /><Square v-else :size="12" />
       </button>
-      <button type="button" class="windows-titlebar__window-control windows-titlebar__window-control--close" aria-label="关闭窗口" @click="runWindowCommand('close')">
-        <span class="windows-titlebar__glyph windows-titlebar__glyph--close" />
+      <button type="button" class="windows-titlebar__window-control windows-titlebar__window-control--close" title="关闭窗口" aria-label="关闭窗口" @click="runWindowCommand('close')">
+        <X :size="14" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { onUnmounted, ref } from 'vue'
+import { Copy, Minus, Square, X } from 'lucide-vue-next'
+
 withDefaults(defineProps<{ dragRegion?: boolean }>(), {
   dragRegion: true,
 })
+
+const maximized = ref(false)
+const stopMaximized = window.platform?.onWindowMaximizedChanged?.(value => { maximized.value = value })
+void window.platform?.isWindowMaximized?.().then(value => { maximized.value = value })
+onUnmounted(() => stopMaximized?.())
 
 function runWindowCommand(action: string) {
   void window.platform?.windowCommand(action)
@@ -47,17 +55,21 @@ function runWindowCommand(action: string) {
   top: 0;
   right: 0;
   display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
   height: var(--windows-titlebar-height);
   -webkit-app-region: no-drag;
 }
 
 .windows-titlebar__window-control {
   display: grid;
-  width: 44px;
-  height: 100%;
+  width: 30px;
+  height: 30px;
   padding: 0;
   place-items: center;
   border: 0;
+  border-radius: 4px;
   color: var(--cp-text-secondary);
   background: transparent;
   cursor: pointer;
@@ -76,38 +88,4 @@ function runWindowCommand(action: string) {
   }
 }
 
-.windows-titlebar__glyph {
-  position: relative;
-  display: block;
-  width: 10px;
-  height: 10px;
-
-  &--minimize::after {
-    position: absolute;
-    right: 0;
-    bottom: 1px;
-    left: 0;
-    height: 1px;
-    background: currentcolor;
-    content: '';
-  }
-
-  &--maximize {
-    border: 1px solid currentcolor;
-  }
-
-  &--close::before,
-  &--close::after {
-    position: absolute;
-    top: 4px;
-    left: 0;
-    width: 12px;
-    height: 1px;
-    background: currentcolor;
-    content: '';
-  }
-
-  &--close::before { transform: rotate(45deg); }
-  &--close::after { transform: rotate(-45deg); }
-}
 </style>

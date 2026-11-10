@@ -8,6 +8,12 @@ export const windowApi = {
   windowChrome: process.platform === 'darwin' ? 'macos-overlay' : (process.platform === 'win32' ? 'windows-overlay' : 'standard'),
   setTitleBarChrome: (chrome: { color: string; symbolColor: string; height?: number }) => ipcRenderer.invoke('window:set-titlebar-chrome', chrome),
   windowCommand: (action: string) => ipcRenderer.invoke('window:command', action),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized') as Promise<boolean>,
+  onWindowMaximizedChanged: (listener: (maximized: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: boolean) => listener(value)
+    ipcRenderer.on('window:maximized-changed', handler)
+    return () => ipcRenderer.removeListener('window:maximized-changed', handler)
+  },
   getDesktopZoomFactor: () => webFrame.getZoomFactor(),
   isFullScreen: () => fullScreen,
   onFullScreenChanged: (listener: (fullScreen: boolean) => void) => {
