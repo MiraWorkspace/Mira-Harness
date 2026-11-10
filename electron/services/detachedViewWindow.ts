@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { BrowserWindow, screen, type WebContents, type WebContentsView } from 'electron'
+import { BrowserWindow, nativeTheme, screen, type WebContents, type WebContentsView } from 'electron'
 
 type BrowserAction = 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'navigate'
 type DetachedAction = 'pin' | 'reattach' | BrowserAction | { type: 'navigate'; url: string }
@@ -30,6 +30,8 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   header{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #e5e7ea;background:#fff;-webkit-app-region:drag}
   body.mac header{padding-left:80px}
   body.mac.fullscreen header{padding-left:16px}
+  body.windows header{padding-right:150px}
+  body.windows.fullscreen header{padding-right:12px}
   .identity-icon{width:18px;height:18px;flex:none;display:grid;place-items:center;color:#6c756e}.identity-icon img,.identity-icon svg{width:18px;height:18px;object-fit:contain}.identity-icon img[hidden]{display:none}.identity-icon img:not([hidden])+svg{display:none}
   .title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
   .actions{position:relative;display:flex;gap:4px;-webkit-app-region:no-drag}.actions button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:#6c756e;cursor:pointer;font-size:17px;line-height:1;display:grid;place-items:center}
@@ -45,7 +47,7 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   .address-bar:focus-within{border-color:#678a78}.address-bar>svg{flex:none}.address-bar input{width:100%;min-width:0;padding:0;border:0;outline:0;background:transparent;color:#27302a;caret-color:#678a78;font:inherit}
   @media(prefers-color-scheme:dark){.browser-toolbar{border-color:#47484f;background:#303030}.address-bar{border-color:#47484f;background:#292a2e}.address-bar input{color:#f2f3f4}.browser-toolbar button{color:#b7b7bf}.browser-toolbar button:hover{background:#38393f;color:#fff}.browser-toolbar button:disabled{color:#666870;background:transparent}}
   @media(prefers-color-scheme:dark){:root{color:#f2f3f4;background:#292a2e;color-scheme:dark}header{border-color:#47484f;background:#303030}.actions button{color:#b7b7bf}.actions button:hover{background:#38393f;color:#fff}.actions button[aria-pressed=true]{color:#a8ccb8;background:#263b31}}
-  </style></head><body class="${process.platform === 'darwin' ? 'mac' : ''}"><header><span class="identity-icon"><img${icon ? ` src="${escapeHtml(icon)}"` : ''} hidden alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${fallback}</svg></span><span class="title">${escapeHtml(title || '网页')}</span><div class="actions"><span class="action"><button type="button" data-action="pin" aria-label="固定窗口" aria-pressed="false" aria-describedby="pin-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5a4 4 0 0 1-2 3l-1 1v2h14v-2l-1-1a4 4 0 0 1-2-3Z"/><path d="M12 15v7"/></svg></button><span id="pin-tooltip" class="tooltip" role="tooltip">固定窗口</span></span><span class="action"><button type="button" data-action="reattach" aria-label="回到主窗口" aria-describedby="reattach-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9m8 5-3 3m0-3v3h3"/></svg></button><span id="reattach-tooltip" class="tooltip" role="tooltip">回到主窗口</span></span></div></header>${kind === 'website' ? browserToolbar() : ''}<script>
+  </style></head><body class="${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : ''}"><header><span class="identity-icon"><img${icon ? ` src="${escapeHtml(icon)}"` : ''} hidden alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${fallback}</svg></span><span class="title">${escapeHtml(title || '网页')}</span><div class="actions"><span class="action"><button type="button" data-action="pin" aria-label="固定窗口" aria-pressed="false" aria-describedby="pin-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5a4 4 0 0 1-2 3l-1 1v2h14v-2l-1-1a4 4 0 0 1-2-3Z"/><path d="M12 15v7"/></svg></button><span id="pin-tooltip" class="tooltip" role="tooltip">固定窗口</span></span><span class="action"><button type="button" data-action="reattach" aria-label="回到主窗口" aria-describedby="reattach-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9m8 5-3 3m0-3v3h3"/></svg></button><span id="reattach-tooltip" class="tooltip" role="tooltip">回到主窗口</span></span></div></header>${kind === 'website' ? browserToolbar() : ''}<script>
   const identityIcon = document.querySelector('.identity-icon img');
   identityIcon.addEventListener('load', () => { identityIcon.hidden = false });
   identityIcon.addEventListener('error', () => { identityIcon.hidden = true });
@@ -109,10 +111,17 @@ export class DetachedViewWindow {
       minHeight: height,
       title,
       ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' as const, trafficLightPosition: { x: 12, y: 17 } } : {}),
+      ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: nativeTheme.shouldUseDarkColors ? '#303030' : '#ffffff', symbolColor: nativeTheme.shouldUseDarkColors ? '#b7b7bf' : '#6c756e', height: 48 }, autoHideMenuBar: true } : {}),
       show: false,
       opacity: options.dragOffset === undefined ? 0 : 1,
       webPreferences: { preload: options.preloadPath || join(__dirname, '../preload/detachedView.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
+    if (process.platform === 'win32') {
+      this.window.setMenuBarVisibility(false)
+      const updateOverlay = () => this.window.setTitleBarOverlay({ color: nativeTheme.shouldUseDarkColors ? '#303030' : '#ffffff', symbolColor: nativeTheme.shouldUseDarkColors ? '#b7b7bf' : '#6c756e', height: 48 })
+      nativeTheme.on('updated', updateOverlay)
+      this.window.once('closed', () => nativeTheme.removeListener('updated', updateOverlay))
+    }
     windows.set(this.window.webContents.id, this)
     this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.window.webContents.on('will-navigate', event => event.preventDefault())

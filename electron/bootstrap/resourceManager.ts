@@ -42,8 +42,10 @@ export function openResourceManager() {
   const window = new BrowserWindow({
     width: 1040, height: 760, minWidth: 640, minHeight: 420,
     title: 'Mira 资源管理器', backgroundColor: '#1e1e1e', show: false,
+    ...(process.platform === 'win32' ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#00000000', height: 48 }, autoHideMenuBar: true } : {}),
     webPreferences: { preload: join(__dirname, '../preload/resourceManager.mjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   })
+  if (process.platform === 'win32') window.setMenu(null)
   instance = window
   network.start()
   const appSession = window.webContents.session

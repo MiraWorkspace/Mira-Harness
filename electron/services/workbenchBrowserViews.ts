@@ -65,6 +65,11 @@ export class WorkbenchBrowserViews {
     this.sync()
   }
 
+  openExternal(url: string) {
+    if (!isAllowedHostedBrowserUrl(url) || url.length > 8192) throw new Error('网页地址无效')
+    return shell.openExternal(url)
+  }
+
   control(tabId: string, action: string, muted = false, dragOffset?: number, presentation?: unknown) {
     const tab = this.tab(tabId), contents = tab.view.webContents, history = contents.navigationHistory
     if (action === 'close') { this.close(tabId); return }

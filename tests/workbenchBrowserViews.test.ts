@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mock = vi.hoisted(() => ({ views: [] as any[], windows: [] as any[], nextLoad: undefined as (() => Promise<void>) | undefined, openExternal: vi.fn(async () => undefined) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
-  return { shell: { openExternal: mock.openExternal }, BrowserWindow: class {
+  return { nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), removeListener: vi.fn() }, shell: { openExternal: mock.openExternal }, BrowserWindow: class {
     webContents = { id: 100 + mock.windows.length, send: vi.fn(), setWindowOpenHandler: vi.fn(), on: vi.fn() }
     contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
     private listeners = new Map<string, (...args: any[]) => void>()
@@ -15,6 +15,8 @@ vi.mock('electron', async () => {
     isFullScreen = () => false
     getContentSize = () => [800, 600]
     setAlwaysOnTop = vi.fn()
+    setMenuBarVisibility = vi.fn()
+    setTitleBarOverlay = vi.fn()
     loadURL = vi.fn(async () => undefined)
     close = vi.fn(() => this.listeners.get('closed')?.())
   }, WebContentsView: class {
@@ -38,6 +40,14 @@ function fixture() {
 beforeEach(() => { mock.views.length = 0; mock.windows.length = 0; mock.nextLoad = undefined; mock.openExternal.mockClear() })
 
 describe('Workbench browser views', () => {
+  it('opens a validated site externally without creating a view', async () => {
+    const { browser } = fixture()
+    await browser.openExternal('https://example.com/')
+    expect(mock.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/')
+    expect(mock.views).toHaveLength(0)
+    expect(() => browser.openExternal('file:///private')).toThrow('地址')
+    expect(mock.openExternal).toHaveBeenCalledTimes(1)
+  })
   it('applies the external-link preference to existing tabs and rejects unsafe popup URLs', async () => {
     const { browser, app } = fixture()
     browser.open('one', 'https://example.com/')

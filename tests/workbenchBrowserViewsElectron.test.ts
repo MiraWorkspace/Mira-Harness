@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
   if (!detachedWindow.isVisible()) throw Error('Held drag must show window immediately')
   const bounds = detachedWindow.getBounds(), content = detachedWindow.getContentBounds()
   if (JSON.stringify(detachedWindow.getSize()) !== JSON.stringify(owner.getMinimumSize())) throw Error('Detached window did not use Mira minimum size')
-  if (Math.abs(bounds.x + bounds.width / 2 - cursor.x) > 1 || Math.abs(bounds.y + (process.platform === 'darwin' ? 24 : (content.y - bounds.y) / 2) - cursor.y) > 1) throw Error('Cursor is not centered on the native title bar: ' + JSON.stringify({ bounds, content, cursor }))
+  if (Math.abs(bounds.x + bounds.width / 2 - cursor.x) > 1 || Math.abs(bounds.y + (process.platform === 'darwin' ? 24 : content.y > bounds.y ? (content.y - bounds.y) / 2 : 24) - cursor.y) > 1) throw Error('Cursor is not centered on the title bar: ' + JSON.stringify({ bounds, content, cursor }))
   const position = detachedWindow.getPosition()
   cursor = { x:1000, y:450 }
   await wait(() => detachedWindow.getPosition()[0] === position[0] + 350 && detachedWindow.getPosition()[1] === position[1] + 200)
@@ -80,6 +80,12 @@ app.whenReady().then(async () => {
   if (await inspectToolbar('document.querySelector(".title").textContent') !== 'Loaded & <page>') throw Error('Detached name did not match tab')
   await wait(() => inspectToolbar('document.querySelector(".identity-icon img")?.naturalWidth > 0'))
   if (view.getBounds().y !== 96) throw Error('Guest does not start below title and browser toolbars')
+  if (process.platform === 'win32') {
+   if (detachedWindow.isMenuBarVisible()) throw Error('Native menu bar is visible')
+   if (detachedWindow.getContentBounds().y - detachedWindow.getBounds().y > 10) throw Error('Native title bar still takes a separate row')
+   const controls = await inspectToolbar('(() => { const header = document.querySelector("header"), actions = document.querySelector(".actions"); return { padding: getComputedStyle(header).paddingRight, right: actions.getBoundingClientRect().right, width: innerWidth } })()')
+   if (controls.padding !== '150px' || controls.width - controls.right < 150) throw Error('Window buttons overlap detached actions')
+  }
   if (process.platform === 'darwin') {
    if (detachedWindow.getContentBounds().y !== detachedWindow.getBounds().y) throw Error('Native title bar still takes a separate row')
    if (JSON.stringify(detachedWindow.getWindowButtonPosition()) !== JSON.stringify({ x:12, y:17 })) throw Error('Traffic lights do not align with toolbar')

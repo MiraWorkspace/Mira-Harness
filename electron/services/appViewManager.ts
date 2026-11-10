@@ -183,6 +183,7 @@ export class AppViewManager {
     if (!browser) throw new Error('应用没有所需权限')
     if (input.type === 'overlay' && typeof input.open === 'boolean') return this.setWorkbenchOverlay(ownerId, input.open)
     if (input.type === 'preferences' && typeof input.openNewWindowInBrowser === 'boolean') return browser.setPreferences(input.openNewWindowInBrowser)
+    if (input.type === 'external' && typeof input.url === 'string') return browser.openExternal(input.url)
     if (input.type === 'open' && typeof input.tabId === 'string' && typeof input.url === 'string') return browser.open(input.tabId, input.url)
     if (input.type === 'control' && typeof input.tabId === 'string' && typeof input.action === 'string') return browser.control(input.tabId, input.action, input.muted === true, typeof input.dragOffset === 'number' && Number.isFinite(input.dragOffset) ? input.dragOffset : undefined, input.presentation)
     if (input.type === 'layout' && typeof input.tabId === 'string') return browser.setLayout(input.tabId, input.bounds as Bounds, input.visible as boolean)

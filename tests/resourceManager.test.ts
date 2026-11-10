@@ -16,11 +16,26 @@ vi.mock('electron', () => ({
     once(event: string, callback: Function) { this.callbacks[event] = callback }
     isDestroyed() { return this.destroyed }
     isMinimized() { return true }
-    restore = vi.fn(); show = vi.fn(); focus = vi.fn(); loadFile = vi.fn(); loadURL = vi.fn()
+    restore = vi.fn(); show = vi.fn(); focus = vi.fn(); loadFile = vi.fn(); loadURL = vi.fn(); setMenu = vi.fn()
   },
 }))
 vi.mock('node:os', () => ({ default: { cpus: () => state.cpus, totalmem: () => 8192, freemem: () => 2048 } }))
 beforeEach(() => { vi.resetModules(); state.windows = []; state.sampleFails = false; state.cpus = [{ times: { user: 10, idle: 90 } }] })
+it.each(['win32', 'darwin', 'linux'])('configures the title bar on %s', async platform => {
+  vi.stubGlobal('process', { ...process, platform })
+  try {
+    const service = await import('../electron/bootstrap/resourceManager')
+    service.openResourceManager()
+    const window = state.windows[0]
+    if (platform === 'win32') {
+      expect(window.options).toMatchObject({ titleBarStyle: 'hidden', titleBarOverlay: { height: 48 }, autoHideMenuBar: true })
+      expect(window.setMenu).toHaveBeenCalledWith(null)
+    } else {
+      expect(window.options.titleBarStyle).toBeUndefined()
+      expect(window.setMenu).not.toHaveBeenCalled()
+    }
+  } finally { vi.unstubAllGlobals() }
+})
 it('opens one isolated window, restores it, closes and reopens, and blocks reopening during exit', async () => {
   const service = await import('../electron/bootstrap/resourceManager')
   service.openResourceManager()
