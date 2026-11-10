@@ -36,6 +36,20 @@ describe('application frame navigation guard', () => {
     guard.dispose()
   })
 
+  it('allows only a trusted owner to prepare a same-entry reload', () => {
+    const { contents, guard, start, invalidate } = fixture()
+    expect(() => guard.prepareReload()).toThrow('就绪')
+    start(); contents.emit('did-finish-load')
+    guard.prepareReload(); start(); contents.emit('did-finish-load')
+    expect(guard.isReady()).toBe(true)
+    expect(invalidate).not.toHaveBeenCalled()
+    start()
+    expect(guard.isReady()).toBe(false)
+    expect(invalidate).toHaveBeenCalledOnce()
+    expect(() => guard.prepareReload()).toThrow('就绪')
+    guard.dispose()
+  })
+
   it('rejects a different app entry and invalidates on process exit', () => {
     const first = fixture()
     first.start('http://127.0.0.1:8123/apps/micro-other/index.html')

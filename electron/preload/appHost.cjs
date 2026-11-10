@@ -9,4 +9,5 @@ if (process.isMainFrame) {
     window.postMessage({ type: 'mira:app-connect' }, '*', [event.ports[0]])
   })
   ipcRenderer.on('mira-app:browser-event', (_event, value) => window.postMessage({ type: 'mira:workbench-browser-event', value }, '*'))
+  ipcRenderer.on('mira-app:detached-event', (_event, value) => window.postMessage({ type: 'mira:workbench-detached-event', value }, '*'))
 }

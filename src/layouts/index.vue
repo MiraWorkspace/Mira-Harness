@@ -182,8 +182,10 @@ html.mira-native-overlay,
 .mira-native-overlay .mira-shell,
 .mira-native-overlay .mira-shell__canvas,
 .mira-native-overlay .app-main--micro-app { background: transparent; }
-.mira-app-switcher-popper.el-popover { padding: 5px; border-color: var(--cp-border); background: var(--cp-bg-overlay); }
-.mira-app-switcher { display: flex; flex-direction: column; gap: 2px; transform-origin: top; }
+// Keep Popper positioning on the transparent wrapper; animate the entire painted surface.
+.mira-app-switcher-popper.el-popover.el-popper { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.mira-app-switcher { display: flex; flex-direction: column; gap: 2px; padding: 5px; border: 1px solid var(--cp-border); border-radius: 8px; color: var(--cp-text); background: var(--cp-bg-overlay); box-shadow: 0 8px 24px rgb(0 0 0 / .1); transform-origin: top left; --mira-app-menu-y: -4px; }
+.mira-app-switcher-popper[data-popper-placement^='top'] .mira-app-switcher { transform-origin: bottom left; --mira-app-menu-y: 4px; }
 .mira-app-switcher button { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 10px; padding: 5px 8px; border: 0; border-radius: var(--cp-radius-sm); color: var(--cp-text); background: transparent; font-size: 13px; text-align: left; }
 .mira-app-switcher button:hover,
 .mira-app-switcher button:focus-visible,
@@ -199,6 +201,8 @@ html.mira-native-overlay,
 .mira-app-menu-enter-active { transition: opacity 150ms cubic-bezier(.16, 1, .3, 1); }
 .mira-app-menu-leave-active { transition: opacity 100ms ease-in; pointer-events: none; }
 .mira-app-menu-enter-from, .mira-app-menu-leave-to { opacity: 0; }
-.mira-app-menu-enter-active .mira-app-switcher { animation: settings-surface-enter 150ms cubic-bezier(.16, 1, .3, 1) both; }
-.mira-app-menu-leave-active .mira-app-switcher { animation: settings-surface-exit 100ms ease-in both; }
+.mira-app-menu-enter-active .mira-app-switcher { animation: mira-app-menu-surface-enter 150ms cubic-bezier(.16, 1, .3, 1) both; }
+.mira-app-menu-leave-active .mira-app-switcher { animation: mira-app-menu-surface-exit 100ms ease-in both; }
+@keyframes mira-app-menu-surface-enter { from { scale: .95; translate: 0 var(--mira-app-menu-y); } to { scale: 1; translate: 0 0; } }
+@keyframes mira-app-menu-surface-exit { from { scale: 1; translate: 0 0; } to { scale: .95; translate: 0 0; } }
 </style>

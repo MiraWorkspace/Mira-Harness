@@ -24,6 +24,7 @@ import { applyHardwareAcceleration } from './bootstrap/hardwareAcceleration'
 import { AutomationKeepAwake } from './services/automationKeepAwake'
 import { MiraNotifications } from './services/miraNotifications'
 import { registerNotificationIpc } from './ipc/notificationIpc'
+import { handleDetachedViewCommand } from './services/detachedViewWindow'
 import { isResourceManagerWindow } from './bootstrap/resourceManager'
 import { miraHome } from './bootstrap/miraHome'
 
@@ -95,6 +96,7 @@ app.whenReady().then(async () => {
   }, 1000)
   registerPlatformIpcHandlers({ computerSettings: services.computerSettings, remoteControl, database: services.database, harnessRuntime: services.harnessRuntime, flows: services.miraFlowController, localMicroAppServer: services.localMicroAppServer, apps: services.apps, workspaceMedia: services.workspaceMedia, workspaceHtml: services.workspaceHtml, terminalSessions, workspaceWatch, mcpConfigStore: services.mcpConfigStore, mcpManager: services.mcpManager, skillMarketplace: services.skillMarketplace, automationScheduler: services.automationScheduler, onThemePreferenceChanged: publishAppTheme, appViews: services.appViews, appRuntime: services.appRuntime })
   ipcMain.on('mira-app:ready', event => { services?.appViews.ready(event.sender, event.senderFrame) })
+  ipcMain.on('mira:detached-command', (event, action) => { if (event.senderFrame === event.sender.mainFrame) handleDetachedViewCommand(event.sender, action) })
   ipcMain.handle('mira:browser-bind', (event, sessionId, browserId, guestId) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error('浏览器绑定仅允许主窗口调用')
     if (typeof sessionId !== 'string' || typeof browserId !== 'string' || !Number.isSafeInteger(guestId)) throw new Error('浏览器绑定参数无效')

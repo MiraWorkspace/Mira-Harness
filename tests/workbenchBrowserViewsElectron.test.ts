@@ -10,32 +10,35 @@ import { expect, it } from 'vitest'
 it('loads and controls real isolated Workbench browser views', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'mira-workbench-views-'))
   try {
-    await build({ entryPoints: [resolve('electron/services/workbenchBrowserViews.ts')], outfile: join(directory, 'browser.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'] })
+    await build({ stdin: { contents: "export { WorkbenchBrowserViews } from './electron/services/workbenchBrowserViews'; export { handleDetachedViewCommand } from './electron/services/detachedViewWindow'", resolveDir: process.cwd() }, outfile: join(directory, 'browser.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'] })
     await writeFile(join(directory, 'main.cjs'), main)
-    const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
+    const env = { ...process.env, DETACHED_PRELOAD: resolve('electron/preload/detachedView.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
     const { stdout, stderr } = await promisify(execFile)(createRequire(import.meta.url)('electron'), [join(directory, 'main.cjs')], { env, timeout: 20000 })
     const line = stdout.split('\n').find(value => value.startsWith('RESULT='))
     if (!line) throw new Error(stdout + stderr)
-    expect(JSON.parse(line.slice(7))).toEqual({ title: 'Loaded page', partition: true, back: true, hidden: true, closed: true })
+    expect(JSON.parse(line.slice(7))).toEqual({ title: 'Loaded page', partition: true, back: true, hidden: true, closed: true, detached: true, reattached: true, pinned: true })
   } finally { await rm(directory, { recursive: true, force: true }) }
 }, 30000)
 
 const main = `
-const { app, BrowserWindow, WebContentsView, session, webContents } = require('electron')
+const { app, BrowserWindow, WebContentsView, session, webContents, ipcMain, screen, shell } = require('electron')
 const http = require('http')
 app.setPath('userData', require('path').join(__dirname, 'profile'))
 app.whenReady().then(async () => {
  let owner, server, browser
  try {
-  server = http.createServer((req, res) => { res.setHeader('Content-Security-Policy', "frame-ancestors 'none'"); res.end('<title>Loaded page</title><a href="/next">Next</a>') })
+  let requests = 0, slowResponse, externalUrl
+  shell.openExternal = async url => { externalUrl = url }
+  server = http.createServer((req, res) => { requests++; if (req.url === '/slow') { slowResponse = res; return } if (req.url === '/redirect') { res.writeHead(302, { Location:'/next' }); res.end(); return } res.setHeader('Content-Security-Policy', "frame-ancestors 'none'"); res.end('<title>Loaded page</title><a href="/next">Next</a>') })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  owner = new BrowserWindow({ show: false, width: 1000, height: 700 })
+  owner = new BrowserWindow({ show: false, width: 1100, height: 700, minWidth: 1024, minHeight: 680 })
   await owner.loadURL('about:blank')
   const appView = new WebContentsView({ webPreferences: { sandbox: true } })
   owner.contentView.addChildView(appView); appView.setBounds({ x: 0, y: 0, width: 900, height: 600 })
   await appView.webContents.loadURL('about:blank')
-  const { WorkbenchBrowserViews } = require('./browser.cjs')
-  browser = new WorkbenchBrowserViews(owner, appView.webContents)
+  const { WorkbenchBrowserViews, handleDetachedViewCommand } = require('./browser.cjs')
+  ipcMain.on('mira:detached-command', (event, action) => handleDetachedViewCommand(event.sender, action))
+  browser = new WorkbenchBrowserViews(owner, appView.webContents, () => {}, process.env.DETACHED_PRELOAD)
   browser.setAppBounds({ x: 0, y: 0, width: 900, height: 600 })
   browser.open('one', 'http://127.0.0.1:' + server.address().port + '/')
   browser.setLayout('one', { x: 10, y: 20, width: 500, height: 400 }, true)
@@ -53,9 +56,112 @@ app.whenReady().then(async () => {
   browser.setLayout('one', { x: 0, y: 0, width: 0, height: 0 }, false)
   const view = owner.contentView.children.find(child => child.webContents === guest)
   const hidden = view.getBounds().width === 0
+  await guest.executeJavaScript('window.retainedValue = 42')
+  let cursor = { x:650, y:250 }
+  screen.getCursorScreenPoint = () => cursor
+  const icon = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><rect width="18" height="18" rx="4" fill="#57906d"/></svg>').toString('base64')
+  browser.control('one', 'detach', false, 90, { title:'Loaded & <page>', icon })
+  const detachedWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
+  if (!detachedWindow) throw Error('No detached window')
+  if (!detachedWindow.isVisible()) throw Error('Held drag must show window immediately')
+  const bounds = detachedWindow.getBounds(), content = detachedWindow.getContentBounds()
+  if (JSON.stringify(detachedWindow.getSize()) !== JSON.stringify(owner.getMinimumSize())) throw Error('Detached window did not use Mira minimum size')
+  if (Math.abs(bounds.x + bounds.width / 2 - cursor.x) > 1 || Math.abs(bounds.y + (process.platform === 'darwin' ? 24 : (content.y - bounds.y) / 2) - cursor.y) > 1) throw Error('Cursor is not centered on the native title bar: ' + JSON.stringify({ bounds, content, cursor }))
+  const position = detachedWindow.getPosition()
+  cursor = { x:1000, y:450 }
+  await wait(() => detachedWindow.getPosition()[0] === position[0] + 350 && detachedWindow.getPosition()[1] === position[1] + 200)
+  browser.control('one', 'end-drag')
+  const droppedPosition = detachedWindow.getPosition()
+  cursor = { x:100, y:100 }
+  await new Promise(resolve => setTimeout(resolve, 80))
+  if (JSON.stringify(detachedWindow.getPosition()) !== JSON.stringify(droppedPosition)) throw Error('Released window kept following cursor')
+  await wait(() => detachedWindow.webContents.executeJavaScript('Boolean(window.miraDetached && document.querySelector("[data-action=pin]"))'))
+  const inspectToolbar = code => detachedWindow.webContents.executeJavaScript(code)
+  if (await inspectToolbar('document.querySelector(".title").textContent') !== 'Loaded & <page>') throw Error('Detached name did not match tab')
+  await wait(() => inspectToolbar('document.querySelector(".identity-icon img")?.naturalWidth > 0'))
+  if (view.getBounds().y !== 96) throw Error('Guest does not start below title and browser toolbars')
+  if (process.platform === 'darwin') {
+   if (detachedWindow.getContentBounds().y !== detachedWindow.getBounds().y) throw Error('Native title bar still takes a separate row')
+   if (JSON.stringify(detachedWindow.getWindowButtonPosition()) !== JSON.stringify({ x:12, y:17 })) throw Error('Traffic lights do not align with toolbar')
+  }
+  for (const action of ['pin', 'reattach']) {
+   const point = await inspectToolbar('(() => { const r = document.querySelector("[data-action=' + action + ']").getBoundingClientRect(); return { x:Math.round(r.x + r.width/2), y:Math.round(r.y + r.height/2) } })()')
+   detachedWindow.webContents.sendInputEvent({ type:'mouseMove', ...point })
+   await wait(() => inspectToolbar('getComputedStyle(document.querySelector("#' + action + '-tooltip")).visibility === "visible"'))
+  }
+  if (process.env.DETACHED_SCREENSHOTS) {
+   const fs = require('fs'), path = require('path')
+   fs.mkdirSync(process.env.DETACHED_SCREENSHOTS, { recursive:true })
+   for (const theme of ['light', 'dark']) {
+    require('electron').nativeTheme.themeSource = theme
+    await new Promise(resolve => setTimeout(resolve, 100))
+    fs.writeFileSync(path.join(process.env.DETACHED_SCREENSHOTS, theme + '.png'), (await detachedWindow.webContents.capturePage({ x:0, y:0, width:1024, height:96 })).toPNG())
+   }
+  }
+  const addressValue = () => inspectToolbar('document.querySelector(".address-bar input").value')
+  const click = action => inspectToolbar('document.querySelector("[data-action=' + action + ']").click()')
+  const navigate = value => inspectToolbar('(() => { const input = document.querySelector(".address-bar input"); input.value = ' + JSON.stringify(value) + '; input.dispatchEvent(new Event("input", { bubbles:true })); input.form.requestSubmit(); })()')
+  await wait(async () => await addressValue() === guest.getURL())
+  const original = guest.getURL()
+  await click('forward')
+  await wait(async () => guest.getURL().endsWith('/next') && await addressValue() === guest.getURL())
+  await click('back')
+  await wait(async () => guest.getURL() === original && await addressValue() === original)
+  await navigate(original + 'redirect')
+  await wait(async () => guest.getURL().endsWith('/next') && await addressValue() === guest.getURL() && !guest.isLoading())
+  const previousRequests = requests
+  await click('reload')
+  await wait(() => requests > previousRequests && !guest.isLoading())
+  await navigate(original + 'slow')
+  await wait(() => Boolean(slowResponse))
+  await wait(() => inspectToolbar('!!document.querySelector("[data-action=stop]")'))
+  await click('stop')
+  await wait(() => !guest.isLoading())
+  slowResponse.end('stopped')
+  await wait(() => inspectToolbar('!!document.querySelector("[data-action=reload]")'))
+  const beforeInvalid = guest.getURL()
+  await navigate('file:///etc/passwd')
+  if (await inspectToolbar('document.querySelector(".address-bar input").validity.valid')) throw Error('Unsafe address accepted')
+  handleDetachedViewCommand(detachedWindow.webContents, { type:'navigate', url:'javascript:alert(1)' })
+  await wait(() => inspectToolbar('!!document.querySelector(".address-bar input").validationMessage'))
+  if (guest.getURL() !== beforeInvalid) throw Error('Unsafe navigation reached guest')
+  await navigate(original)
+  await wait(async () => guest.getURL() === original && await addressValue() === original && !guest.isLoading())
+  await click('external')
+  await wait(() => externalUrl === original)
+  await inspectToolbar('document.querySelector("[data-action=pin]").click()')
+  await wait(() => detachedWindow.isAlwaysOnTop())
+  handleDetachedViewCommand(detachedWindow.webContents, { type:'navigate', url:'file:///blocked' })
+  await wait(() => inspectToolbar('!!document.querySelector(".address-bar input").validationMessage'))
+  if (await inspectToolbar('document.querySelector("[data-action=pin]").getAttribute("aria-pressed")') !== 'true') throw Error('Browser error reset pin UI')
+  await inspectToolbar('document.querySelector("[data-action=pin]").click()')
+  await wait(() => !detachedWindow.isAlwaysOnTop())
+  await inspectToolbar('document.querySelector(".address-bar input").setCustomValidity("")')
+
+  await guest.executeJavaScript('window.retainedValue = 42')
+  if (guest.id !== guestId || !detachedWindow.contentView.children.some(child => child.webContents === guest)) throw Error('Detached view was replaced')
+  browser.setAppBounds({ x:0, y:0, width:0, height:0 })
+  if (view.getBounds().width === 0) throw Error('Main window hid the detached page')
+  browser.control('one', 'mute', true)
+  if (!guest.isAudioMuted()) throw Error('Mute failed')
+  await detachedWindow.webContents.executeJavaScript('document.querySelector("[data-action=pin]").click()')
+  await wait(() => detachedWindow.isAlwaysOnTop())
+  await wait(() => inspectToolbar('document.querySelector("#pin-tooltip").textContent === "取消固定窗口"'))
+  handleDetachedViewCommand(guest, 'reattach')
+  if (detachedWindow.isDestroyed()) throw Error('Guest forged a toolbar command')
+  await detachedWindow.webContents.executeJavaScript('document.querySelector("[data-action=reattach]").click()')
+  await wait(() => detachedWindow.isDestroyed())
+  if (!owner.contentView.children.includes(view) || await guest.executeJavaScript('window.retainedValue') !== 42) throw Error('Reattach lost live page state')
+  browser.control('one', 'detach')
+  const closedWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
+  closedWindow.close()
+  await wait(() => closedWindow.isDestroyed())
+  if (!owner.contentView.children.includes(view) || guest.isDestroyed()) throw Error('Closing detached window destroyed page')
+  browser.control('one', 'detach')
+  const disposingWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
   browser.dispose()
-  await wait(() => guest.isDestroyed())
-  console.log('RESULT=' + JSON.stringify({ title, partition, back: true, hidden, closed: true }))
+  await wait(() => guest.isDestroyed() && disposingWindow.isDestroyed())
+  console.log('RESULT=' + JSON.stringify({ title, partition, back: true, hidden, closed: true, detached: true, reattached: true, pinned: true }))
  } catch (error) { console.error(error); process.exitCode = 1 }
  finally { browser?.dispose(); owner?.destroy(); server?.close(); app.quit() }
 })

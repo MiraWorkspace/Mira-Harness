@@ -10,11 +10,11 @@ import { expect, it } from 'vitest'
 it('hosts miniapps in Workbench over generic file/view SDKs with independent storage and revocable permissions', async () => {
   const root = resolve('.'), workbench = resolve('../Mira-Workbench'), temp = await mkdtemp(join(tmpdir(), 'workbench-owned-e2e-'))
   try {
-    await promisify(execFile)(process.execPath, [resolve(workbench, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: workbench, timeout: 30000 })
+    await promisify(execFile)(process.execPath, [resolve(workbench, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', join(temp, 'workbench')], { cwd: workbench, timeout: 30000 })
     await build({ stdin: { contents: entry, resolveDir: root, loader: 'ts' }, outfile: join(temp, 'platform.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'], plugins: [{ name: 'native-sqlite', setup: builder => builder.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: createRequire(import.meta.url).resolve('better-sqlite3'), external: true })) }] })
     await build({ stdin: { contents: childApp, resolveDir: workbench, loader: 'ts' }, outfile: join(temp, 'child.js'), bundle: true, format: 'esm' })
     await writeFile(join(temp, 'main.cjs'), main)
-    const env = { ...process.env, NODE_PATH: join(root, 'node_modules'), WORKBENCH_DIST: join(workbench, 'dist'), APP_PRELOAD: join(root, 'electron/preload/appHost.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
+    const env = { ...process.env, NODE_PATH: join(root, 'node_modules'), WORKBENCH_DIST: join(temp, 'workbench'), APP_PRELOAD: join(root, 'electron/preload/appHost.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
     const { stdout, stderr } = await promisify(execFile)(createRequire(import.meta.url)('electron'), [join(temp, 'main.cjs')], { env, timeout: 45000 })
     const line = stdout.split('\n').find(value => value.startsWith('RESULT='))
     if (!line) throw new Error(stdout + stderr)
@@ -23,6 +23,7 @@ it('hosts miniapps in Workbench over generic file/view SDKs with independent sto
 }, 70000)
 
 const entry = `
+export { handleDetachedViewCommand } from './electron/services/detachedViewWindow'
 export { AppRuntime } from './electron/services/appRuntime'
 export { AppSdkDispatcher } from './electron/services/appSdkDispatcher'
 export { AppViewManager } from './electron/services/appViewManager'
@@ -51,9 +52,10 @@ window.saveDraft = async () => {
 document.querySelector('#ready').textContent = 'ready'
 `
 const main = `
-const { app, ipcMain, webContents } = require('electron')
+const { app, ipcMain, webContents, BrowserWindow, screen } = require('electron')
+const assert = require('node:assert/strict')
 const fs = require('fs'), path = require('path'), crypto = require('crypto')
-const { AppRuntime, AppSdkDispatcher, AppViewManager, createMiraMainWindow, LocalMicroAppServer, MiraApps, MiraPaths, AppDatabase, AppFiles, LegacyWorkbenchMiniapps, zipSync, strToU8 } = require('./platform.cjs')
+const { handleDetachedViewCommand, AppRuntime, AppSdkDispatcher, AppViewManager, createMiraMainWindow, LocalMicroAppServer, MiraApps, MiraPaths, AppDatabase, AppFiles, LegacyWorkbenchMiniapps, zipSync, strToU8 } = require('./platform.cjs')
 app.setPath('userData', path.join(__dirname, 'profile'))
 app.whenReady().then(async () => {
  let owner, server, runtime, views
@@ -92,11 +94,12 @@ app.whenReady().then(async () => {
    views: (appId, id, input) => views.ownedView(id, input, { mount: (key, directory, entry) => server.mountResource(key, directory, entry), unmount: key => server.unmountResource(key) }, input.type === 'open' ? files.resolve(appId, input.directory) : undefined),
   })
   views = new AppViewManager(runtime, dispatcher, id => apps.resolvePlatformEntry(id), process.env.APP_PRELOAD)
+  ipcMain.on('mira:detached-command', (event, action) => handleDetachedViewCommand(event.sender, action))
   ipcMain.on('mira-app:ready', event => views.ready(event.sender, event.senderFrame))
-  owner = createMiraMainWindow({ show: false, width: 1000, height: 700 }); await owner.loadURL('about:blank')
+  owner = createMiraMainWindow({ show: false, width: 1100, height: 700, minWidth: 1024, minHeight: 680 }); await owner.loadURL('about:blank')
   const wait = async (fn, label = 'condition') => { const deadline = Date.now() + 10000; while (Date.now() < deadline) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 20)) } throw Error('timeout: ' + label) }
   const id = views.open(owner, 'mira-workbench'); views.setBounds(owner, id, { x: 0, y: 0, width: 900, height: 640 })
-  const parent = webContents.fromId(id), inspect = async code => { try { return await parent.executeJavaScript(code, true) } catch (error) { console.error('FAILED SCRIPT:', code, await parent.executeJavaScript('document.body.innerText')); throw error } }
+  const parent = webContents.fromId(id); parent.setBackgroundThrottling(false); owner.show(); const inspect = async code => { try { return await parent.executeJavaScript(code, true) } catch (error) { console.error('FAILED SCRIPT:', code, await parent.executeJavaScript('document.body.innerText')); throw error } }
   parent.on('console-message', (_e, _level, message) => console.log('PARENT: ' + message))
   await wait(async () => (await inspect('document.body.innerText')).includes('独立小程序'), 'migration')
   if (!fs.existsSync(path.join(dataRoot, 'files/mira-workbench/miniapps/registry.json'))) throw Error('registry not owned by Workbench')
@@ -113,6 +116,71 @@ app.whenReady().then(async () => {
   if (await child.executeJavaScript('document.querySelector("#draft").value') !== 'legacy-draft') throw Error('legacy SQLite data not migrated')
   await child.executeJavaScript('document.querySelector("#draft").value = "retained"; window.saveDraft()')
   if (await child.executeJavaScript('document.querySelector("#result").textContent') !== 'model-result') throw Error('model not routed')
+  const childMenu = async label => {
+   await inspect('document.querySelector(".tab--site").dispatchEvent(new MouseEvent("contextmenu", { bubbles:true, clientX:140,clientY:25 }))')
+   await wait(() => inspect('!!document.querySelector(".tab-context-menu")'))
+   await inspect('[...document.querySelectorAll(".tab-context-menu button")].find(button => button.textContent === ' + JSON.stringify(label) + ').click()')
+  }
+  // Opening the menu must keep the live miniapp visible underneath the transparent Workbench root.
+  const rootView = owner.contentView.children.find(view => view.webContents === parent)
+  const childView = owner.contentView.children.find(view => view.webContents === child)
+  const contentBounds = childView.getBounds()
+  await inspect('document.querySelector(".tab--site").dispatchEvent(new MouseEvent("contextmenu", { bubbles:true,clientX:140,clientY:25 }))')
+  await wait(() => inspect('!!document.querySelector(".tab-context-menu")'), 'menu visible')
+  assert.deepEqual(childView.getBounds(), contentBounds)
+  await wait(() => owner.contentView.children.indexOf(rootView) > owner.contentView.children.indexOf(childView), 'menu overlay')
+  assert.equal(await inspect('getComputedStyle(document.documentElement).backgroundColor'), 'rgba(0, 0, 0, 0)')
+  await inspect('document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
+  await wait(() => !views.workbenchOverlays.has(id), 'menu overlay restored')
+  await childMenu('重新加载')
+  await wait(async () => await child.executeJavaScript('document.querySelector("#draft")?.value === "retained"'), 'reload starts')
+  await wait(async () => await child.executeJavaScript('document.querySelector("#ready")?.textContent === "ready"'), 'reload reconnects SDK')
+  if (await child.executeJavaScript('document.querySelector("#draft").value') !== 'retained') throw Error('Reload lost stored draft')
+  await childMenu('复制')
+  await wait(() => inspect('document.querySelectorAll(".tab--site").length === 2'), 'duplicate tab')
+  let clone
+  await wait(() => { clone = webContents.getAllWebContents().find(contents => contents !== child && contents.getURL().includes('/apps/resource-')); return Boolean(clone) }, 'duplicate view')
+  await wait(async () => await clone.executeJavaScript('document.querySelector("#ready")?.textContent === "ready"'), 'duplicate SDK')
+  if (await clone.executeJavaScript('document.querySelector("#draft").value') !== 'retained') throw Error('Duplicate lost storage namespace')
+  await childMenu('将网站静音')
+  await wait(() => child.isAudioMuted() && clone.isAudioMuted(), 'miniapp mute')
+  await childMenu('将这个网站取消静音')
+  await wait(() => !child.isAudioMuted() && !clone.isAudioMuted(), 'miniapp unmute')
+  await inspect('document.querySelectorAll(".tab--site")[1].querySelector(".tab-close").click()')
+  await wait(() => clone.isDestroyed(), 'close duplicate')
+  await wait(() => inspect('document.querySelectorAll(".tab--site").length === 1'), 'close duplicate tab animation')
+  await child.executeJavaScript('window.retainedValue = 42')
+  const start = await inspect('(() => { const r = document.querySelector(".tab--site").getBoundingClientRect(); return { x:Math.round(r.x + 70), y:Math.round(r.y + 16) } })()')
+  let cursor = { x:650, y:300 }
+  screen.getCursorScreenPoint = () => cursor
+  parent.sendInputEvent({ type:'mouseDown', button:'left', clickCount:1, ...start })
+  parent.sendInputEvent({ type:'mouseMove', x:start.x + 200, y:start.y + 110, modifiers:['leftButtonDown'] })
+  await wait(() => BrowserWindow.getAllWindows().length === 1, 'detached while held')
+  const detachedWindow = BrowserWindow.getAllWindows()[0]
+  assert.equal(detachedWindow.isVisible(), true)
+  assert.deepEqual(detachedWindow.getSize(), owner.getMinimumSize())
+  const windowBounds = detachedWindow.getBounds(), contentBoundsAfterDetach = detachedWindow.getContentBounds()
+  assert.ok(Math.abs(windowBounds.x + windowBounds.width / 2 - cursor.x) <= 1)
+  assert.ok(Math.abs(windowBounds.y + (process.platform === 'darwin' ? 24 : (contentBoundsAfterDetach.y - windowBounds.y) / 2) - cursor.y) <= 1)
+  const firstPosition = detachedWindow.getPosition()
+  cursor = { x:950, y:500 }
+  await wait(() => detachedWindow.getPosition()[0] === firstPosition[0] + 300 && detachedWindow.getPosition()[1] === firstPosition[1] + 200, 'held window follows cursor')
+  parent.sendInputEvent({ type:'mouseUp', button:'left', clickCount:1, x:start.x + 200, y:start.y + 110 })
+  await wait(() => !views.views.get(child.id).detached.dragTimer, 'pointer release ends native tracking')
+  const released = detachedWindow.getPosition()
+  cursor = { x:100, y:100 }
+  await new Promise(resolve => setTimeout(resolve, 80))
+  assert.deepEqual(detachedWindow.getPosition(), released)
+  await wait(() => detachedWindow.webContents.executeJavaScript('Boolean(window.miraDetached && document.querySelector("[data-action=reattach]"))'), 'window controls')
+  assert.equal(await detachedWindow.webContents.executeJavaScript('document.querySelector(".title").textContent'), '独立小程序')
+  assert.equal(await detachedWindow.webContents.executeJavaScript('!!document.querySelector(".identity-icon svg")'), true)
+  assert.equal(await detachedWindow.webContents.executeJavaScript('!!document.querySelector(".browser-toolbar")'), false)
+  assert.equal(views.views.get(child.id).view.getBounds().y, 48)
+  await child.executeJavaScript('window.saveDraft()')
+  await detachedWindow.webContents.executeJavaScript('document.querySelector("[data-action=reattach]").click()')
+  await wait(() => detachedWindow.isDestroyed(), 'reattach miniapp')
+  await wait(() => inspect('document.querySelectorAll(".tab--site").length === 1'), 'restored miniapp tab')
+  if (await child.executeJavaScript('window.retainedValue') !== 42) throw Error('Detached miniapp lost state')
   const scope = 'scope-' + crypto.createHash('sha256').update('mira-workbench').digest('hex').slice(0, 24) + '-' + crypto.createHash('sha256').update('sdk-test').digest('hex').slice(0, 32)
   if (!fs.existsSync(path.join(dataRoot, scope + '.sqlite')) || !fs.existsSync(path.join(dataRoot, 'sdk-test.sqlite'))) throw Error('data identity wrong')
   await inspect('document.querySelector(".tab--home").click(); document.querySelector("[aria-label=设置]").click()')
@@ -129,7 +197,7 @@ app.whenReady().then(async () => {
   await inspect('document.querySelector("[aria-label=关闭权限设置]").click(); document.querySelector(".manage-dialog [aria-label=关闭]").click()')
   child = await openChild()
   if (await child.executeJavaScript('document.querySelector("#draft").value') !== 'retained') throw Error('data lost')
-  await inspect('document.querySelector(".tab--home").click(); document.querySelector("[aria-label=新增]").click()')
+  await inspect('document.querySelector(".tab--home").click(); document.querySelector("[aria-label=添加]").click()')
   await inspect('document.querySelector("#add-miniapp-tab").click()')
   const update = zipSync({ 'miniapp-manifest.json': strToU8(JSON.stringify({ ...manifest, version: '1.1.0' })), 'index.html': strToU8(html), 'child.js': new Uint8Array(fs.readFileSync(path.join(__dirname, 'child.js'))) })
   const base64 = Buffer.from(update).toString('base64')

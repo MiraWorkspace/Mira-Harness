@@ -12,6 +12,15 @@ export class OwnedViewSession {
     this.guard = new AppFrameGuard(contents, entry, () => this.dispose()); contents.on('did-finish-load', this.loaded)
   }
   load() { return this.contents.loadURL(this.entry) }
+  reload() {
+    this.guard.prepareReload()
+    for (const item of this.pending.values()) clearTimeout(item.timer)
+    this.pending.clear()
+    this.channel?.port1.postMessage({ type: 'mira:disconnect' })
+    this.channel?.port1.close(); this.channel?.port2.close()
+    this.channel = undefined; this.requested = false
+    return this.load()
+  }
   ready(sender: WebContents, frame: WebFrameMain | null) {
     if (this.disposed || sender !== this.contents || frame !== this.contents.mainFrame || this.channel) return false
     this.requested = true; this.loaded(); return true
@@ -20,6 +29,7 @@ export class OwnedViewSession {
     if (!this.requested || this.channel || !this.guard.isReady()) return
     const channel = this.channel = new MessageChannelMain()
     channel.port1.on('message', ({ data }) => {
+      if (channel !== this.channel) return
       if (data?.type === 'mira:disconnect') { this.dispose(); return }
       if (data?.type !== 'mira:request' || typeof data.id !== 'string' || !data.id || data.id.length > 128 || typeof data.method !== 'string' || data.method.length > 128) return
       if (this.pending.size >= 32) { channel.port1.postMessage({ type: 'mira:response', id: data.id, ok: false, error: { code: 'BUSY', message: '请求过多' } }); return }

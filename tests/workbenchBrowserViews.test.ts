@@ -1,15 +1,27 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mock = vi.hoisted(() => ({ views: [] as any[], nextLoad: undefined as (() => Promise<void>) | undefined, openExternal: vi.fn(async () => undefined) }))
+const mock = vi.hoisted(() => ({ views: [] as any[], windows: [] as any[], nextLoad: undefined as (() => Promise<void>) | undefined, openExternal: vi.fn(async () => undefined) }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
-  return { shell: { openExternal: mock.openExternal }, WebContentsView: class {
+  return { shell: { openExternal: mock.openExternal }, BrowserWindow: class {
+    webContents = { id: 100 + mock.windows.length, send: vi.fn(), setWindowOpenHandler: vi.fn(), on: vi.fn() }
+    contentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+    private listeners = new Map<string, (...args: any[]) => void>()
+    constructor() { mock.windows.push(this) }
+    on(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
+    once(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
+    isDestroyed = () => false
+    getContentSize = () => [800, 600]
+    setAlwaysOnTop = vi.fn()
+    loadURL = vi.fn(async () => undefined)
+    close = vi.fn(() => this.listeners.get('closed')?.())
+  }, WebContentsView: class {
     webContents: any
     setBounds = vi.fn()
     constructor(public options: unknown) {
       const navigationHistory = { canGoBack: vi.fn(() => true), canGoForward: vi.fn(() => false), goBack: vi.fn(), goForward: vi.fn() }
-      this.webContents = Object.assign(new EventEmitter(), { navigationHistory, session: { setPermissionRequestHandler: vi.fn() }, setWindowOpenHandler: vi.fn(), getURL: () => 'https://example.com/', getTitle: () => 'Example', isLoading: () => false, isDestroyed: () => false, loadURL: vi.fn(async () => undefined), close: vi.fn(), reload: vi.fn(), stop: vi.fn() })
+      this.webContents = Object.assign(new EventEmitter(), { navigationHistory, session: { setPermissionRequestHandler: vi.fn() }, setWindowOpenHandler: vi.fn(), getURL: () => 'https://example.com/', getTitle: () => 'Example', isLoading: () => false, isAudioMuted: vi.fn(() => false), setAudioMuted: vi.fn(), isDestroyed: () => false, loadURL: vi.fn(async () => undefined), close: vi.fn(), reload: vi.fn(), stop: vi.fn() })
       if (mock.nextLoad) { this.webContents.loadURL.mockImplementationOnce(mock.nextLoad); mock.nextLoad = undefined }
       mock.views.push(this)
     }
@@ -18,11 +30,11 @@ vi.mock('electron', async () => {
 import { WorkbenchBrowserViews } from '../electron/services/workbenchBrowserViews'
 
 function fixture() {
-  const owner = { isDestroyed: () => false, webContents: { getZoomFactor: () => 2 }, contentView: { addChildView: vi.fn(), removeChildView: vi.fn() } }
+  const owner = { getMinimumSize: () => [1024, 680], isDestroyed: () => false, once: vi.fn(), removeListener: vi.fn(), show: vi.fn(), focus: vi.fn(), webContents: { getZoomFactor: () => 2 }, contentView: { addChildView: vi.fn(), removeChildView: vi.fn() } }
   const app = { isDestroyed: () => false, send: vi.fn() }
   return { owner, app, browser: new WorkbenchBrowserViews(owner as never, app as never) }
 }
-beforeEach(() => { mock.views.length = 0; mock.nextLoad = undefined; mock.openExternal.mockClear() })
+beforeEach(() => { mock.views.length = 0; mock.windows.length = 0; mock.nextLoad = undefined; mock.openExternal.mockClear() })
 
 describe('Workbench browser views', () => {
   it('opens only the current validated tab URL in the system browser', async () => {
@@ -84,6 +96,26 @@ describe('Workbench browser views', () => {
     expect(view.webContents.navigationHistory.goBack).toHaveBeenCalledOnce()
     expect(() => browser.open('one', 'file:///private')).toThrow('地址')
     expect(view.webContents.loadURL).toHaveBeenCalledTimes(2)
+    browser.dispose()
+  })
+
+  it('detaches the existing web view and reattaches it when the detached window closes', () => {
+    const { browser, owner, app } = fixture()
+    browser.open('one', 'https://example.com/')
+    const view = mock.views[0]
+    browser.control('one', 'detach')
+    const detached = mock.windows[0]
+    expect(owner.contentView.removeChildView).toHaveBeenCalledWith(view)
+    expect(detached.contentView.addChildView).toHaveBeenCalledWith(view)
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 96, width: 800, height: 504 })
+    browser.setLayout('one', { x: 0, y: 0, width: 500, height: 300 }, true)
+    expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 96, width: 800, height: 504 })
+    browser.control('one', 'mute', true)
+    expect(view.webContents.setAudioMuted).toHaveBeenCalledWith(true)
+    browser.control('one', 'reattach')
+    expect(detached.contentView.removeChildView).toHaveBeenCalledWith(view)
+    expect(owner.contentView.addChildView).toHaveBeenLastCalledWith(view)
+    expect(app.send).toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ type: 'detached', tabId: 'one', detached: false }))
     browser.dispose()
   })
 

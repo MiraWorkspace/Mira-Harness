@@ -41,6 +41,12 @@ export class AppFrameGuard {
 
   isReady() { return this.state === 'ready' && !this.contents.isDestroyed() && sameEntry(this.contents.getURL(), this.entry) }
 
+  /** Only a trusted owner command can authorize loading this same entry again. */
+  prepareReload() {
+    if (!this.isReady()) throw new Error('应用尚未就绪，请稍后重试')
+    this.state = 'initial'
+  }
+
   readonly revoke = () => {
     if (this.state === 'revoked') return
     this.state = 'revoked'

@@ -1,7 +1,7 @@
-import { WebContentsView, type BrowserWindow, type WebContents, type WebFrameMain } from 'electron'
+import { WebContentsView, type BrowserWindow, type WebContents, type WebFrameMain, type View } from 'electron'
 import { randomUUID, createHash } from 'node:crypto'
 import { OwnedViewSession } from './ownedViewSession'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { AppHostSession } from './appHostSession'
 import type { AppRuntime, InstalledPlatformApp } from './appRuntime'
 import type { AppSdkDispatcher } from './appSdkDispatcher'
@@ -9,14 +9,16 @@ import { appNetworkPolicy } from '../security/appNetworkPolicy'
 import { WorkbenchBrowserViews } from './workbenchBrowserViews'
 import { bindAppViewShortcuts } from './appViewShortcuts'
 import { miraShellView } from '../bootstrap/miraMainWindow'
+import { DetachedViewWindow } from './detachedViewWindow'
 
 type Bounds = { x: number; y: number; width: number; height: number }
-interface AppView { appId: string; owner: BrowserWindow; view: WebContentsView; session: AppHostSession | OwnedViewSession; browser?: WorkbenchBrowserViews; parentId?: number; bounds: Bounds; childLayout?: { bounds: Bounds; visible: boolean }; cleanup(): void }
+interface AppView { appId: string; owner: BrowserWindow; view: WebContentsView; session: AppHostSession | OwnedViewSession; browser?: WorkbenchBrowserViews; parentId?: number; bounds: Bounds; childLayout?: { bounds: Bounds; visible: boolean }; detached?: DetachedViewWindow; cleanup(): void }
 
 /** Manages isolated native application views. Callers must authenticate the owner frame. */
 export class AppViewManager {
   private readonly views = new Map<number, AppView>()
   private readonly overlays = new Map<BrowserWindow, { id: number; focus?: WebContents }>()
+  private readonly workbenchOverlays = new Map<number, { before: View[]; focus?: WebContents }>()
 
   constructor(private readonly runtime: AppRuntime, private readonly dispatcher: AppSdkDispatcher, private readonly resolveEntry: (id: string) => InstalledPlatformApp & { url: string }, private readonly preloadPath = join(__dirname, '../preload/appHost.cjs')) {}
 
@@ -45,7 +47,7 @@ export class AppViewManager {
     const preventDownload = (event: Electron.Event) => event.preventDefault()
     appSession.on('will-download', preventDownload)
     let cleaned = false, attached = false, session: AppHostSession | OwnedViewSession | undefined
-    const browser = !resourceCleanup && ['mira-workbench', 'mira-workbench-test'].includes(appId) ? new WorkbenchBrowserViews(owner, contents, () => this.raiseOverlay(owner)) : undefined
+    const browser = !resourceCleanup && ['mira-workbench', 'mira-workbench-test'].includes(appId) ? new WorkbenchBrowserViews(owner, contents, () => this.raiseOverlay(owner), join(dirname(this.preloadPath), 'detachedView.cjs')) : undefined
     const ownerNavigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>) => {
       if (event.isMainFrame && !event.isSameDocument) cleanup()
     }
@@ -53,6 +55,9 @@ export class AppViewManager {
       if (cleaned) return
       cleaned = true
       if (this.overlays.get(owner)?.id === id) this.setShellOverlay(owner, id, false)
+      this.workbenchOverlays.delete(id)
+      const detached = this.views.get(id)?.detached
+      detached?.dispose()
       this.views.delete(id)
       const parent = parentId === undefined ? undefined : this.views.get(parentId)
       if (parent && !parent.view.webContents.isDestroyed()) parent.session.event('views.closed', { viewId: id })
@@ -64,7 +69,7 @@ export class AppViewManager {
       appSession.removeListener('will-download', preventDownload)
       browser?.dispose()
       resourceCleanup?.()
-      if (attached && !owner.isDestroyed()) owner.contentView.removeChildView(view)
+      if (attached && !detached && !owner.isDestroyed()) owner.contentView.removeChildView(view)
       if (session) session.dispose()
       else if (!contents.isDestroyed()) contents.close()
     }
@@ -100,6 +105,7 @@ export class AppViewManager {
     const x = Math.round(bounds.x * zoom), y = Math.round(bounds.y * zoom), width = Math.round(bounds.width * zoom), height = Math.round(bounds.height * zoom)
     const next = { x: Math.min(x, area.width), y: Math.min(y, area.height), width: Math.min(width, Math.max(0, area.width - x)), height: Math.min(height, Math.max(0, area.height - y)) }
     item.bounds = next
+    if (item.detached) return
     item.view.setBounds(next)
     item.browser?.setAppBounds(next)
     item.view.webContents.setZoomFactor(zoom)
@@ -138,16 +144,69 @@ export class AppViewManager {
   }
 
   private raiseOverlay(owner: BrowserWindow) {
+    for (const id of this.workbenchOverlays.keys()) {
+      const item = this.views.get(id)
+      if (item?.owner === owner && !owner.isDestroyed()) owner.contentView.addChildView(item.view)
+    }
     if (this.overlays.has(owner) && !owner.isDestroyed()) owner.contentView.addChildView(miraShellView(owner)!)
+  }
+
+  private setWorkbenchOverlay(ownerId: number, open: boolean) {
+    const item = this.views.get(ownerId)
+    if (!item?.browser || item.parentId !== undefined || item.owner.isDestroyed()) throw new Error('应用没有所需权限')
+    const owner = item.owner
+    if (open) {
+      if (!this.workbenchOverlays.has(ownerId)) {
+        const focus = owner.contentView.children.find(view => 'webContents' in view && (view as WebContentsView).webContents.isFocused()) as WebContentsView | undefined
+        const siblings = owner.contentView.children
+        // The shell can move above the menu, so restore relative to the other siblings.
+        this.workbenchOverlays.set(ownerId, { before: siblings.slice(0, siblings.indexOf(item.view)).filter(view => view !== miraShellView(owner)), focus: focus?.webContents })
+      }
+      item.view.setBackgroundColor('#00000000')
+      this.raiseOverlay(owner)
+      if (!this.overlays.has(owner)) item.view.webContents.focus()
+    } else {
+      const overlay = this.workbenchOverlays.get(ownerId)
+      if (!overlay) return
+      this.workbenchOverlays.delete(ownerId)
+      const siblings = owner.contentView.children.filter(view => view !== item.view)
+      const before = overlay.before.findLast(view => siblings.includes(view))
+      const index = before ? siblings.indexOf(before) + 1 : !this.overlays.has(owner) && siblings[0] === miraShellView(owner) ? 1 : 0
+      owner.contentView.addChildView(item.view, index)
+      this.raiseOverlay(owner)
+      if (!this.overlays.has(owner) && overlay.focus && !overlay.focus.isDestroyed()) overlay.focus.focus()
+    }
   }
 
   workbenchBrowser(ownerId: number, input: Record<string, unknown>) {
     const browser = this.views.get(ownerId)?.browser
     if (!browser) throw new Error('应用没有所需权限')
+    if (input.type === 'overlay' && typeof input.open === 'boolean') return this.setWorkbenchOverlay(ownerId, input.open)
     if (input.type === 'open' && typeof input.tabId === 'string' && typeof input.url === 'string') return browser.open(input.tabId, input.url)
-    if (input.type === 'control' && typeof input.tabId === 'string' && typeof input.action === 'string') return browser.control(input.tabId, input.action)
+    if (input.type === 'control' && typeof input.tabId === 'string' && typeof input.action === 'string') return browser.control(input.tabId, input.action, input.muted === true, typeof input.dragOffset === 'number' && Number.isFinite(input.dragOffset) ? input.dragOffset : undefined, input.presentation)
     if (input.type === 'layout' && typeof input.tabId === 'string') return browser.setLayout(input.tabId, input.bounds as Bounds, input.visible as boolean)
     throw new Error('请求参数无效')
+  }
+
+  private emitDetached(item: AppView, detached: boolean) {
+    const target = item.parentId === undefined ? item.view.webContents : this.views.get(item.parentId)?.view.webContents
+    if (target && !target.isDestroyed()) target.send('mira-app:detached-event', { id: item.view.webContents.id, detached })
+  }
+
+  private detachChild(item: AppView, dragOffset?: number, presentation?: unknown) {
+    if (item.detached) return
+    item.detached = new DetachedViewWindow({ presentation, kind: 'miniapp', dragOffset, dragSource: this.views.get(item.parentId!)?.view.webContents, owner: item.owner, view: item.view, title: item.view.webContents.getTitle() || item.appId, preloadPath: join(dirname(this.preloadPath), 'detachedView.cjs'), onReattach: () => {
+      if (this.views.get(item.view.webContents.id) !== item) return
+      item.detached = undefined
+      this.syncChildAfterAttach(item)
+      this.emitDetached(item, false)
+    } })
+    this.emitDetached(item, true)
+  }
+
+  private syncChildAfterAttach(item: AppView) {
+    const parent = item.parentId === undefined ? undefined : this.views.get(item.parentId)
+    if (parent) this.syncChild(parent, item)
   }
 
   ownedView(ownerId: number, input: Record<string, unknown>, resources: { mount(id: string, directory: string, entry: string): string; unmount(id: string): void }, directory?: string) {
@@ -164,6 +223,11 @@ export class AppViewManager {
     const child = this.views.get(input.id as number)
     if (!child || child.parentId !== ownerId || !(child.session instanceof OwnedViewSession)) throw new Error('应用视图无效')
     if (input.type === 'close') { child.cleanup(); return }
+    if (input.type === 'detach') { this.detachChild(child, typeof input.dragOffset === 'number' && Number.isFinite(input.dragOffset) ? input.dragOffset : undefined, input.presentation); return }
+    if (input.type === 'end-drag') { child.detached?.endDrag(); return }
+    if (input.type === 'reattach') { child.detached?.reattach(); return }
+    if (input.type === 'reload') return child.session.reload()
+    if (input.type === 'mute' && typeof input.muted === 'boolean') { child.view.webContents.setAudioMuted(input.muted); return }
     if (input.type === 'reply') {
       if (typeof input.requestId !== 'string' || typeof input.ok !== 'boolean') throw new Error('请求参数无效')
       child.session.reply(input.requestId, input.ok, input.value, typeof input.error === 'string' ? input.error.slice(0, 1000) : undefined); return
@@ -193,6 +257,7 @@ export class AppViewManager {
   }
 
   private syncChild(parent: AppView, child: AppView) {
+    if (child.detached) return
     const layout = child.childLayout, bounds = parent.bounds, zoom = parent.owner.webContents.getZoomFactor()
     if (!layout?.visible) { child.view.setBounds({ x: 0, y: 0, width: 0, height: 0 }); return }
     const x = Math.min(bounds.width, Math.round(layout.bounds.x * zoom)), y = Math.min(bounds.height, Math.round(layout.bounds.y * zoom))

@@ -9,6 +9,7 @@ vi.mock('electron', async () => {
       options: unknown
       webContents: any
       setBounds = vi.fn()
+      setBackgroundColor = vi.fn()
       constructor(options: unknown) {
         this.options = options
         const appSession = Object.assign(new EventEmitter(), { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn(), onHeadersReceived: vi.fn() } })
@@ -134,5 +135,44 @@ it('layers shell overlays above live app, miniapp and browser views and restores
   expect(owner.contentView.children[0]).toBe(shell)
   expect(view.webContents.focus).toHaveBeenCalledOnce()
   expect(view.setBounds).toHaveBeenCalledTimes(boundsCalls)
+  manager.closeAll()
+})
+
+it('shows Workbench menus above live native content without resizing or closing it', () => {
+  const { owner, shell, runtime, resolve, manager } = fixture()
+  const workbench = { ...app, id: 'mira-workbench' }
+  runtime.requireApproval.mockReturnValue(workbench)
+  resolve.mockReturnValue(workbench)
+  const id = manager.open(owner as never, workbench.id), root = mocks.views[0]
+  manager.setBounds(owner as never, id, { x: 0, y: 40, width: 800, height: 560 })
+  const childId = manager.ownedView(id, { type: 'open', key: 'sample', entry: 'index.html' }, resources, '/app/files/release') as number
+  manager.ownedView(id, { type: 'layout', id: childId, visible: true, bounds: { x: 0, y: 44, width: 800, height: 516 } }, resources)
+  const child = mocks.views[1], childBoundsCalls = child.setBounds.mock.calls.length
+  root.webContents.isFocused.mockReturnValue(false)
+  manager.workbenchBrowser(id, { type: 'overlay', open: true })
+  manager.workbenchBrowser(id, { type: 'overlay', open: true })
+  expect(owner.contentView.children.at(-1)).toBe(root)
+  expect(root.setBackgroundColor).toHaveBeenCalledWith('#00000000')
+  expect(child.setBounds).toHaveBeenCalledTimes(childBoundsCalls)
+  expect(child.webContents.destroyed).toBe(false)
+  manager.workbenchBrowser(id, { type: 'open', tabId: 'page', url: 'https://example.com' })
+  expect(owner.contentView.children.at(-1)).toBe(root)
+  manager.workbenchBrowser(id, { type: 'overlay', open: false })
+  expect(owner.contentView.children.slice(0, 3)).toEqual([shell, root, child])
+  expect(child.webContents.focus).toHaveBeenCalledOnce()
+  manager.workbenchBrowser(id, { type: 'overlay', open: true })
+  manager.setShellOverlay(owner as never, id, true)
+  expect(owner.contentView.children.at(-1)).toBe(shell)
+  const focusCalls = root.webContents.focus.mock.calls.length
+  manager.workbenchBrowser(id, { type: 'overlay', open: true })
+  expect(root.webContents.focus).toHaveBeenCalledTimes(focusCalls)
+  manager.workbenchBrowser(id, { type: 'overlay', open: false })
+  expect(owner.contentView.children[0]).toBe(root)
+  expect(owner.contentView.children.at(-1)).toBe(shell)
+  expect(child.webContents.focus).toHaveBeenCalledOnce()
+  manager.setShellOverlay(owner as never, id, false)
+  expect(owner.contentView.children.slice(0, 3)).toEqual([shell, root, child])
+  expect(child.setBounds).toHaveBeenCalledTimes(childBoundsCalls)
+  expect(() => manager.workbenchBrowser(childId, { type: 'overlay', open: true })).toThrow('权限')
   manager.closeAll()
 })
