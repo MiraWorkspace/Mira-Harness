@@ -12,6 +12,7 @@ vi.mock('electron', async () => {
     on(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
     once(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
     isDestroyed = () => false
+    isFullScreen = () => false
     getContentSize = () => [800, 600]
     setAlwaysOnTop = vi.fn()
     loadURL = vi.fn(async () => undefined)

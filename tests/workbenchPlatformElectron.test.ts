@@ -58,13 +58,14 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto')
 const { handleDetachedViewCommand, AppRuntime, AppSdkDispatcher, AppViewManager, createMiraMainWindow, LocalMicroAppServer, MiraApps, MiraPaths, AppDatabase, AppFiles, LegacyWorkbenchMiniapps, zipSync, strToU8 } = require('./platform.cjs')
 app.setPath('userData', path.join(__dirname, 'profile'))
 app.whenReady().then(async () => {
- let owner, server, runtime, views
+ let owner, server, runtime, views, websiteServer
  try {
   const root = path.join(__dirname, 'data'), paths = new MiraPaths(root).ensure(), dataRoot = path.join(root, 'app-data')
   fs.cpSync(process.env.WORKBENCH_DIST, path.join(paths.apps, 'mira-workbench'), { recursive: true })
   const legacyDir = path.join(paths.apps, '.miniapps', 'sdk-test'); fs.mkdirSync(legacyDir, { recursive: true })
-  const manifest = { manifestVersion: 1, id: 'sdk-test', name: '独立小程序', version: '1.0.0', entry: 'index.html', requiredCapabilities: ['storage:app', 'models:generate', 'files:read', 'files:write'] }
+  const manifest = { manifestVersion: 1, id: 'sdk-test', name: '独立小程序', version: '1.0.0', entry: 'index.html', icon: 'icon.svg', requiredCapabilities: ['storage:app', 'models:generate', 'files:read', 'files:write'] }
   const html = '<!doctype html><p id="identity"></p><input id="draft"><p id="result"></p><p id="ready"></p><script type="module" src="child.js"></script>'
+  fs.writeFileSync(path.join(legacyDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="8" fill="green"/></svg>')
   fs.writeFileSync(path.join(legacyDir, 'app-manifest.json'), JSON.stringify(manifest))
   fs.writeFileSync(path.join(legacyDir, 'index.html'), html); fs.copyFileSync(path.join(__dirname, 'child.js'), path.join(legacyDir, 'child.js'))
   const oldData = new AppDatabase(dataRoot, 'sdk-test')
@@ -132,6 +133,77 @@ app.whenReady().then(async () => {
   assert.equal(await inspect('getComputedStyle(document.documentElement).backgroundColor'), 'rgba(0, 0, 0, 0)')
   await inspect('document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
   await wait(() => !views.workbenchOverlays.has(id), 'menu overlay restored')
+  const checkDialogs = async (contents, nativeView, kind) => {
+   const bounds = nativeView.getBounds()
+   await contents.executeJavaScript('window.dialogRetainedValue = 73')
+   await inspect('document.querySelector("[aria-label=在浏览器打开]")?.dispatchEvent(new PointerEvent("pointerover", { bubbles:true })) || document.querySelector("[aria-label=添加]").dispatchEvent(new PointerEvent("pointerover", { bubbles:true }))')
+   assert.equal(await inspect('!!document.querySelector(".workbench-tooltip")'), false, 'Tooltip must wait before appearing')
+   await wait(() => inspect('!!document.querySelector(".workbench-tooltip")'), kind + ' tooltip')
+   await wait(() => views.workbenchOverlays.has(id), kind + ' tooltip native overlay')
+   assert.deepEqual(nativeView.getBounds(), bounds)
+   assert.ok(owner.contentView.children.indexOf(rootView) > owner.contentView.children.indexOf(nativeView))
+   for (const theme of ['light','dark']) {
+    await inspect('document.documentElement.dataset.theme = ' + JSON.stringify(theme))
+    assert.equal(await inspect('getComputedStyle(document.querySelector(".workbench-tooltip")).backgroundColor'), theme === 'dark' ? 'rgb(43, 43, 43)' : 'rgb(255, 255, 255)')
+    assert.equal(await inspect('getComputedStyle(document.querySelector(".workbench-tooltip")).borderRadius'), '6px')
+   }
+   await inspect('document.documentElement.dataset.theme = "light"; document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
+   await wait(() => !views.workbenchOverlays.has(id), kind + ' tooltip exit')
+   const assertVisible = async selector => {
+    await wait(() => inspect('!!document.querySelector(' + JSON.stringify(selector) + ')') , kind + ' dialog')
+    await wait(() => views.workbenchOverlays.has(id), kind + ' overlay')
+    assert.deepEqual(nativeView.getBounds(), bounds)
+    assert.ok(owner.contentView.children.indexOf(rootView) > owner.contentView.children.indexOf(nativeView))
+    assert.equal(await inspect('getComputedStyle(document.querySelector(".workbench")).backgroundColor'), 'rgba(0, 0, 0, 0)')
+    assert.equal(await contents.executeJavaScript('window.dialogRetainedValue'), 73)
+    for (const theme of ['light','dark']) {
+     await inspect('document.documentElement.dataset.theme = ' + JSON.stringify(theme))
+     assert.equal(await inspect('getComputedStyle(document.querySelector(' + JSON.stringify(selector) + ')).backgroundColor'), theme === 'dark' ? 'rgb(43, 43, 43)' : 'rgb(255, 255, 255)')
+     assert.equal(await inspect('getComputedStyle(document.querySelector(' + JSON.stringify(selector) + ')).borderRadius'), '12px')
+    }
+    await inspect('document.documentElement.dataset.theme = "light"')
+   }
+   await inspect('document.querySelector("[aria-label=添加]").click()')
+   await assertVisible('.add-dialog')
+   await inspect('document.querySelector(".add-dialog [aria-label=关闭]").click()')
+   assert.equal(await inspect('!!document.querySelector(".floating-dialog-leave-active") && document.documentElement.classList.contains("workbench-overlay-open")'), true, 'Keep native overlay throughout dialog exit')
+   assert.equal(views.workbenchOverlays.has(id), true)
+   await wait(() => !views.workbenchOverlays.has(id), kind + ' add closed')
+   await inspect('document.querySelector("[aria-label=设置]").click()')
+   await assertVisible('.manage-dialog')
+   await inspect('document.querySelector(".manage-edit").click()')
+   await assertVisible('.site-dialog')
+   await wait(() => inspect('!document.querySelector(".manage-dialog")'), kind + ' manage exit')
+   await inspect('document.querySelector(".site-dialog [aria-label=关闭]").click()')
+   await wait(() => !views.workbenchOverlays.has(id), kind + ' edit closed')
+   assert.deepEqual(nativeView.getBounds(), bounds)
+   assert.ok(owner.contentView.children.indexOf(rootView) < owner.contentView.children.indexOf(nativeView))
+   assert.equal(await contents.executeJavaScript('window.dialogRetainedValue'), 73)
+  }
+  await checkDialogs(child, childView, 'miniapp')
+  websiteServer = require('http').createServer((_req, response) => response.end('<title>Dialog website</title><body style="background:#427659">Live website</body>'))
+  await new Promise(resolve => websiteServer.listen(0, '127.0.0.1', resolve))
+  const websiteUrl = 'http://127.0.0.1:' + websiteServer.address().port + '/'
+  parent.send('mira-app:browser-event', { type:'open-tab', url:websiteUrl })
+  let website
+  await wait(() => { website = webContents.getAllWebContents().find(contents => contents.getURL() === websiteUrl); return Boolean(website) }, 'live website')
+  await wait(() => !website.isLoading(), 'website loaded')
+  const websiteView = owner.contentView.children.find(view => view.webContents === website)
+  await wait(() => websiteView.getBounds().width > 0, 'website shown')
+  await checkDialogs(website, websiteView, 'website')
+  for (const theme of ['light', 'dark']) {
+   await inspect('document.documentElement.dataset.theme = ' + JSON.stringify(theme))
+   await inspect('document.querySelector("[aria-label=添加]").click()')
+   await wait(() => views.workbenchOverlays.has(id), 'themed dialog overlay')
+   assert.equal(await inspect('getComputedStyle(document.querySelector(".web-content")).backgroundColor'), 'rgba(0, 0, 0, 0)')
+   await inspect('document.querySelector(".add-dialog [aria-label=关闭]").click()')
+   await wait(() => !views.workbenchOverlays.has(id), 'themed dialog closed')
+  }
+  await inspect('document.documentElement.dataset.theme = "light"; document.querySelector(".tab--site.is-active .tab-close").click()')
+  await wait(() => website.isDestroyed(), 'close website')
+  await wait(() => inspect('document.querySelectorAll(".tab--site").length === 1'), 'website tab removed')
+  await inspect('document.querySelector(".tab--site").click()')
+  await wait(() => childView.getBounds().width > 0, 'miniapp restored')
   await childMenu('重新加载')
   await wait(async () => await child.executeJavaScript('document.querySelector("#draft")?.value === "retained"'), 'reload starts')
   await wait(async () => await child.executeJavaScript('document.querySelector("#ready")?.textContent === "ready"'), 'reload reconnects SDK')
@@ -173,9 +245,17 @@ app.whenReady().then(async () => {
   assert.deepEqual(detachedWindow.getPosition(), released)
   await wait(() => detachedWindow.webContents.executeJavaScript('Boolean(window.miraDetached && document.querySelector("[data-action=reattach]"))'), 'window controls')
   assert.equal(await detachedWindow.webContents.executeJavaScript('document.querySelector(".title").textContent'), '独立小程序')
-  assert.equal(await detachedWindow.webContents.executeJavaScript('!!document.querySelector(".identity-icon svg")'), true)
+  await wait(() => detachedWindow.webContents.executeJavaScript('document.querySelector(".identity-icon img")?.naturalWidth > 0 && !document.querySelector(".identity-icon img").hidden'), 'miniapp logo in detached title')
   assert.equal(await detachedWindow.webContents.executeJavaScript('!!document.querySelector(".browser-toolbar")'), false)
   assert.equal(views.views.get(child.id).view.getBounds().y, 48)
+  if (process.platform === 'darwin') {
+   for (const fullScreen of [true, false]) {
+    const finished = new Promise(resolve => detachedWindow.once(fullScreen ? 'enter-full-screen' : 'leave-full-screen', resolve))
+    detachedWindow.setFullScreen(fullScreen)
+    await finished
+    await wait(async () => await detachedWindow.webContents.executeJavaScript('getComputedStyle(document.querySelector("header")).paddingLeft') === (fullScreen ? '16px' : '80px'), 'miniapp fullscreen title spacing')
+   }
+  }
   await child.executeJavaScript('window.saveDraft()')
   await detachedWindow.webContents.executeJavaScript('document.querySelector("[data-action=reattach]").click()')
   await wait(() => detachedWindow.isDestroyed(), 'reattach miniapp')
@@ -199,7 +279,7 @@ app.whenReady().then(async () => {
   if (await child.executeJavaScript('document.querySelector("#draft").value') !== 'retained') throw Error('data lost')
   await inspect('document.querySelector(".tab--home").click(); document.querySelector("[aria-label=添加]").click()')
   await inspect('document.querySelector("#add-miniapp-tab").click()')
-  const update = zipSync({ 'miniapp-manifest.json': strToU8(JSON.stringify({ ...manifest, version: '1.1.0' })), 'index.html': strToU8(html), 'child.js': new Uint8Array(fs.readFileSync(path.join(__dirname, 'child.js'))) })
+  const update = zipSync({ 'icon.svg': new Uint8Array(fs.readFileSync(path.join(legacyDir, 'icon.svg'))), 'miniapp-manifest.json': strToU8(JSON.stringify({ ...manifest, version: '1.1.0' })), 'index.html': strToU8(html), 'child.js': new Uint8Array(fs.readFileSync(path.join(__dirname, 'child.js'))) })
   const base64 = Buffer.from(update).toString('base64')
   await inspect('(() => { const bytes = Uint8Array.from(atob(' + JSON.stringify(base64) + '), c => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([bytes], "update.miniapp")); const input = document.querySelector("input[aria-label=选择小程序安装包]"); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true })); })()')
   await wait(async () => Boolean(await inspect('document.querySelector(".review-dialog")')), 'update review')
@@ -215,6 +295,6 @@ app.whenReady().then(async () => {
   if (approvals.size) throw Error('Mira stored miniapp permissions')
   console.log('RESULT=' + JSON.stringify({ migrated: true, ownedByWorkbench: true, storage: true, model: true, filePermissions: true, revoked: true, updated: true, uninstalled: true }))
  } catch (error) { console.error(error); process.exitCode = 1 }
- finally { views?.closeAll(); runtime?.close(); owner?.destroy(); await server?.stop(); app.quit() }
+ finally { views?.closeAll(); runtime?.close(); owner?.destroy(); websiteServer?.close(); await server?.stop(); app.quit() }
 })
 `

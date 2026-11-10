@@ -3,13 +3,17 @@ import { BrowserWindow, screen, type WebContents, type WebContentsView } from 'e
 
 type BrowserAction = 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'navigate'
 type DetachedAction = 'pin' | 'reattach' | BrowserAction | { type: 'navigate'; url: string }
-type BrowserState = { url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string }
+type BrowserState = { url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string; faviconUrl?: string | null }
 type DetachedOptions = { owner: BrowserWindow; view: WebContentsView; title: string; presentation?: unknown; kind?: 'website' | 'miniapp'; preloadPath?: string; dragOffset?: number; dragSource?: WebContents; browserCommand?: (action: BrowserAction, url?: string) => void | Promise<void>; onReattach: () => void }
 
 const windows = new Map<number, DetachedViewWindow>()
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
+}
+
+function validIcon(value: unknown): string {
+  return typeof value === 'string' && value.length <= 2 * 1024 * 1024 && /^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp|svg\+xml|x-icon|vnd.microsoft.icon);)/i.test(value) ? value : ''
 }
 
 function browserToolbar() {
@@ -25,7 +29,8 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg)}
   header{height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #e5e7ea;background:#fff;-webkit-app-region:drag}
   body.mac header{padding-left:80px}
-  .identity-icon{width:18px;height:18px;flex:none;display:grid;place-items:center;color:#6c756e}.identity-icon img,.identity-icon svg{width:18px;height:18px;object-fit:contain}.identity-icon img:not([hidden])+svg{display:none}
+  body.mac.fullscreen header{padding-left:16px}
+  .identity-icon{width:18px;height:18px;flex:none;display:grid;place-items:center;color:#6c756e}.identity-icon img,.identity-icon svg{width:18px;height:18px;object-fit:contain}.identity-icon img[hidden]{display:none}.identity-icon img:not([hidden])+svg{display:none}
   .title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
   .actions{position:relative;display:flex;gap:4px;-webkit-app-region:no-drag}.actions button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:#6c756e;cursor:pointer;font-size:17px;line-height:1;display:grid;place-items:center}
   .tooltip{position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:5px 8px;border-radius:5px;background:#27302a;color:#fff;font-size:12px;white-space:nowrap;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .12s ease;z-index:1}
@@ -40,8 +45,12 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
   .address-bar:focus-within{border-color:#678a78}.address-bar>svg{flex:none}.address-bar input{width:100%;min-width:0;padding:0;border:0;outline:0;background:transparent;color:#27302a;caret-color:#678a78;font:inherit}
   @media(prefers-color-scheme:dark){.browser-toolbar{border-color:#47484f;background:#303030}.address-bar{border-color:#47484f;background:#292a2e}.address-bar input{color:#f2f3f4}.browser-toolbar button{color:#b7b7bf}.browser-toolbar button:hover{background:#38393f;color:#fff}.browser-toolbar button:disabled{color:#666870;background:transparent}}
   @media(prefers-color-scheme:dark){:root{color:#f2f3f4;background:#292a2e;color-scheme:dark}header{border-color:#47484f;background:#303030}.actions button{color:#b7b7bf}.actions button:hover{background:#38393f;color:#fff}.actions button[aria-pressed=true]{color:#a8ccb8;background:#263b31}}
-  </style></head><body class="${process.platform === 'darwin' ? 'mac' : ''}"><header><span class="identity-icon">${icon ? `<img src="${escapeHtml(icon)}" alt="" referrerpolicy="no-referrer">` : ''}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${fallback}</svg></span><span class="title">${escapeHtml(title || '网页')}</span><div class="actions"><span class="action"><button type="button" data-action="pin" aria-label="固定窗口" aria-pressed="false" aria-describedby="pin-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5a4 4 0 0 1-2 3l-1 1v2h14v-2l-1-1a4 4 0 0 1-2-3Z"/><path d="M12 15v7"/></svg></button><span id="pin-tooltip" class="tooltip" role="tooltip">固定窗口</span></span><span class="action"><button type="button" data-action="reattach" aria-label="回到主窗口" aria-describedby="reattach-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9m8 5-3 3m0-3v3h3"/></svg></button><span id="reattach-tooltip" class="tooltip" role="tooltip">回到主窗口</span></span></div></header>${kind === 'website' ? browserToolbar() : ''}<script>
-  document.querySelector('.identity-icon img')?.addEventListener('error', event => { event.target.hidden = true });
+  </style></head><body class="${process.platform === 'darwin' ? 'mac' : ''}"><header><span class="identity-icon"><img${icon ? ` src="${escapeHtml(icon)}"` : ''} hidden alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${fallback}</svg></span><span class="title">${escapeHtml(title || '网页')}</span><div class="actions"><span class="action"><button type="button" data-action="pin" aria-label="固定窗口" aria-pressed="false" aria-describedby="pin-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5a4 4 0 0 1-2 3l-1 1v2h14v-2l-1-1a4 4 0 0 1-2-3Z"/><path d="M12 15v7"/></svg></button><span id="pin-tooltip" class="tooltip" role="tooltip">固定窗口</span></span><span class="action"><button type="button" data-action="reattach" aria-label="回到主窗口" aria-describedby="reattach-tooltip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9m8 5-3 3m0-3v3h3"/></svg></button><span id="reattach-tooltip" class="tooltip" role="tooltip">回到主窗口</span></span></div></header>${kind === 'website' ? browserToolbar() : ''}<script>
+  const identityIcon = document.querySelector('.identity-icon img');
+  identityIcon.addEventListener('load', () => { identityIcon.hidden = false });
+  identityIcon.addEventListener('error', () => { identityIcon.hidden = true });
+  if (identityIcon.complete && identityIcon.naturalWidth) identityIcon.hidden = false;
+
   for (const button of document.querySelectorAll('[data-action]')) button.addEventListener('click', () => window.miraDetached.command(button.dataset.action));
   const address = document.querySelector('.address-bar input'), form = document.querySelector('.address-bar');
   let currentUrl = '';
@@ -58,6 +67,11 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
     } catch { address.setCustomValidity('请输入有效的 HTTP 或 HTTPS 网站地址，且不能包含账号密码。'); address.reportValidity(); }
   });
   window.miraDetached.onState(state => {
+    if (typeof state.icon === 'string' && state.icon !== (identityIcon.getAttribute('src') || '')) {
+      identityIcon.hidden = true;
+      if (state.icon) identityIcon.src = state.icon; else identityIcon.removeAttribute('src');
+    }
+    if (typeof state.fullScreen === 'boolean') document.body.classList.toggle('fullscreen', state.fullScreen);
     if (address && state.browser) {
       const browser = state.browser; currentUrl = browser.url;
       if (document.activeElement !== address) address.value = currentUrl;
@@ -78,13 +92,14 @@ export class DetachedViewWindow {
   private reattaching = false
   private pinned = false
   private browserState?: BrowserState
+  private icon: string
   private dragTimer?: ReturnType<typeof setInterval>
   private releaseSource?: () => void
 
   constructor(private readonly options: DetachedOptions) {
     const presentation = options.presentation && typeof options.presentation === 'object' ? options.presentation as Record<string, unknown> : {}
     const title = typeof presentation.title === 'string' && presentation.title.trim() ? presentation.title.slice(0, 512) : options.title || '网页'
-    const icon = typeof presentation.icon === 'string' && presentation.icon.length <= 2 * 1024 * 1024 && /^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp|svg\+xml|x-icon|vnd.microsoft.icon);)/i.test(presentation.icon) ? presentation.icon : ''
+    const icon = this.icon = validIcon(presentation.icon)
     const [ownerMinWidth, ownerMinHeight] = options.owner.getMinimumSize()
     const width = Math.max(480, ownerMinWidth), height = Math.max(320, ownerMinHeight)
     this.window = new BrowserWindow({
@@ -103,6 +118,8 @@ export class DetachedViewWindow {
     this.window.webContents.on('will-navigate', event => event.preventDefault())
     this.window.webContents.on('did-finish-load', () => this.sendState())
     this.window.on('resize', () => this.layout())
+    this.window.on('enter-full-screen', () => { this.sendState(); this.layout() })
+    this.window.on('leave-full-screen', () => { this.sendState(); this.layout() })
     this.window.on('close', () => {
       if (this.reattaching) return
       this.reattaching = true
@@ -192,8 +209,14 @@ export class DetachedViewWindow {
 
   updateBrowserState(state: BrowserState) { this.browserState = state; this.sendState() }
 
+  updatePresentation(value: unknown) {
+    if (!value || typeof value !== 'object') return
+    this.icon = validIcon((value as Record<string, unknown>).icon)
+    this.sendState()
+  }
+
   private sendState() {
-    if (!this.window.isDestroyed()) this.window.webContents.send('mira:detached-state', { pinned: this.pinned, browser: this.browserState })
+    if (!this.window.isDestroyed()) this.window.webContents.send('mira:detached-state', { pinned: this.pinned, browser: this.browserState, icon: this.icon || validIcon(this.browserState?.faviconUrl), fullScreen: this.window.isFullScreen() })
   }
 
   dispose() {

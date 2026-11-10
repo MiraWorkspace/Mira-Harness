@@ -74,6 +74,7 @@ export class WorkbenchBrowserViews {
     else if (action === 'stop') contents.stop()
     else if (action === 'mute') { contents.setAudioMuted(muted); this.state(tabId) }
     else if (action === 'detach') this.detach(tabId, dragOffset, presentation)
+    else if (action === 'presentation') tab.detached?.updatePresentation(presentation)
     else if (action === 'end-drag') tab.detached?.endDrag()
     else if (action === 'reattach') tab.detached?.reattach()
     else throw new Error('浏览器操作无效')
@@ -90,7 +91,7 @@ export class WorkbenchBrowserViews {
   detach(tabId: string, dragOffset?: number, presentation?: unknown) {
     const tab = this.tab(tabId)
     if (tab.detached) return
-    tab.detached = new DetachedViewWindow({ browserCommand: (action, url) => action === 'navigate' ? this.open(tabId, url || '') : this.control(tabId, action), presentation: presentation || { icon: tab.faviconUrl }, dragOffset, dragSource: this.app, owner: this.owner, view: tab.view, title: tab.view.webContents.getTitle() || tab.requestedUrl, preloadPath: this.detachedPreloadPath, onReattach: () => {
+    tab.detached = new DetachedViewWindow({ browserCommand: (action, url) => action === 'navigate' ? this.open(tabId, url || '') : this.control(tabId, action), presentation, dragOffset, dragSource: this.app, owner: this.owner, view: tab.view, title: tab.view.webContents.getTitle() || tab.requestedUrl, preloadPath: this.detachedPreloadPath, onReattach: () => {
       if (this.tabs.get(tabId) !== tab) return
       tab.detached = undefined
       this.sync()

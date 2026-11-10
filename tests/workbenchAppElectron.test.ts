@@ -30,7 +30,7 @@ app.setPath('userData', path.join(__dirname, 'profile'))
 app.whenReady().then(async () => {
  let server, win
  try {
-  const tables = { entries: [], settings: [] }, requests = [], iconRequests = []; let legacyReads = 0, iconDownloads = 0, finishSlowIcon
+  const tables = { entries: [], settings: [] }, requests = [], iconRequests = []; let legacyReads = 0, iconDownloads = 0, finishSlowIcon, finishLateIcon
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', 'base64')
   const uploadedLogo = 'data:image/png;base64,' + png.toString('base64')
   ipcMain.on('mira-app:ready', event => {
@@ -46,7 +46,8 @@ app.whenReady().then(async () => {
      else if (data.method === 'workbench.browser') { requests.push(data.params); value = null }
      else if (data.method === 'workbench.fetchSiteIcon') {
       iconRequests.push(data.params.url)
-      if (data.params.url.endsWith('/preview-slow')) value = await new Promise(resolve => { finishSlowIcon = resolve })
+      if (data.params.url.endsWith('/late-cached')) value = await new Promise(resolve => { finishLateIcon = resolve })
+      else if (data.params.url.endsWith('/preview-slow')) value = await new Promise(resolve => { finishSlowIcon = resolve })
       else if (data.params.url.endsWith('/preview-missing')) value = null
       else value = await fetchWorkbenchSiteIcon(data.params.url, (input, init) => net.fetch(input, init))
      }
@@ -76,6 +77,7 @@ app.whenReady().then(async () => {
   const wait = async fn => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 20)) } throw Error('timeout') }
   tables.entries.push({ id: 'uploaded', name: 'Uploaded logo', type: 'website', address: url, icon: uploadedLogo, cached_icon: 'data:image/png;base64,broken', builtin: 0, visible: 1, position: 1 })
   tables.entries.push({ id: 'missing', name: 'Missing icon', type: 'website', address: 'http://127.0.0.1:1/', icon: null, builtin: 0, visible: 1, position: 2 })
+  tables.entries.push({ id: 'late-cached', name: 'Late cached logo', type: 'website', address: url + 'late-cached', icon: null, builtin: 0, visible: 1, position: 3 })
   // Use a local server without CORS headers to exercise host acquisition.
   await win.loadURL(url)
   await wait(() => inspect('document.body.innerText.includes("旧网站")'))
@@ -107,9 +109,10 @@ app.whenReady().then(async () => {
   const tabMenu = async (index, label) => {
    await inspect('[...document.querySelectorAll(".tab--site")][' + index + '].dispatchEvent(new MouseEvent("contextmenu", { bubbles:true, clientX:160, clientY:26 }))')
    await wait(() => inspect('!!document.querySelector(".tab-context-menu")'))
-   if (label) await inspect('[...document.querySelectorAll(".tab-context-menu button")].find(button => button.textContent === ' + JSON.stringify(label) + ').click()')
+   if (label) { await inspect('[...document.querySelectorAll(".tab-context-menu button")].find(button => button.textContent === ' + JSON.stringify(label) + ').click()'); await wait(() => inspect('!document.querySelector(".tab-context-menu")')) }
   }
   await inspect('document.querySelector(".tab--home").click(); [...document.querySelectorAll(".site-card")].find(e => e.textContent.includes("Missing icon")).click()')
+  await wait(() => inspect('!document.documentElement.classList.contains("workbench-overlay-open")'))
   const menuRequestsStart = requests.length
   await tabMenu(1)
   await wait(() => requests.slice(menuRequestsStart).some(item => item.type === 'overlay' && item.open))
@@ -117,7 +120,25 @@ app.whenReady().then(async () => {
   assert.equal(requests.slice(menuRequestsStart).some(item => item.type === 'layout' && item.visible === false), false)
   await inspect('document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
   await wait(() => requests.slice(menuRequestsStart).some(item => item.type === 'overlay' && !item.open))
-  await wait(() => inspect('!document.documentElement.classList.contains("workbench-tab-menu-open")'))
+  await wait(() => inspect('!document.documentElement.classList.contains("workbench-overlay-open")'))
+  for (const kind of ['add', 'manage']) {
+   const before = requests.length
+   await inspect('document.querySelector("[aria-label=' + (kind === 'add' ? '添加' : '设置') + ']").click()')
+   await wait(() => requests.slice(before).some(item => item.type === 'overlay' && item.open))
+   assert.equal(requests.slice(before).some(item => item.type === 'layout' && item.visible === false), false)
+   assert.equal(await inspect('getComputedStyle(document.querySelector(".web-content")).backgroundColor'), 'rgba(0, 0, 0, 0)')
+   await inspect('document.querySelector(".' + (kind === 'add' ? 'add-dialog' : 'manage-dialog') + ' [aria-label=关闭]").click()')
+   await wait(() => requests.slice(before).some(item => item.type === 'overlay' && !item.open))
+   await wait(() => inspect('!document.documentElement.classList.contains("workbench-overlay-open")'))
+  }
+  win.webContents.debugger.attach('1.3')
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[{ name:'prefers-reduced-motion', value:'reduce' }] })
+  await tabMenu(1)
+  assert.equal(await inspect('getComputedStyle(document.querySelector(".tab-context-menu")).animationName'), 'none')
+  await inspect('document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
+  await wait(() => inspect('!document.querySelector(".tab-context-menu") && !document.documentElement.classList.contains("workbench-overlay-open")'))
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features:[] })
+  win.webContents.debugger.detach()
   await tabMenu(0, '重新加载')
   await wait(() => requests.some(item => item.action === 'reload' && item.tabId === 'old'))
   await tabMenu(0, '复制')
@@ -134,7 +155,7 @@ app.whenReady().then(async () => {
   await inspect('document.querySelector(".tab-context-menu").dispatchEvent(new KeyboardEvent("keydown", { key:"End", bubbles:true }))')
   assert.equal(await inspect('document.activeElement.textContent'), '关闭右侧')
   await inspect('document.dispatchEvent(new KeyboardEvent("keydown", { key:"Escape", bubbles:true }))')
-  assert.equal(await inspect('!!document.querySelector(".tab-context-menu")'), false)
+  await wait(() => inspect('!document.querySelector(".tab-context-menu")'))
   await wait(() => inspect('getComputedStyle(document.querySelectorAll(".tab--site")[1].querySelector(".tab-close")).visibility === "hidden"'))
   assert.equal(await inspect('getComputedStyle(document.querySelector(".tab--site.is-active .tab-close")).visibility'), 'visible')
   if (process.env.WORKBENCH_SCREENSHOTS) {
@@ -169,8 +190,11 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type:'mouseUp', button:'left', clickCount:1, x:target.x - 12, y:start.y + 8 })
   await wait(() => inspect('!document.querySelector(".is-dragging")'))
   await wait(() => inspect('[...document.querySelectorAll(".tab--site")].every(tab => getComputedStyle(tab).transform === "none")'))
+  win.webContents.send('mira-app:browser-event', { type:'state', tabId:survivingClone, loading:true })
+  await wait(() => inspect('!!document.querySelector(".tab--site .tab-spinner") || !document.querySelector(".tab--site img")'))
   const detachStart = await tabBounds(0)
-  const expectedPresentation = await inspect('(() => { const tab = document.elementFromPoint(' + detachStart.x + ',' + detachStart.y + ').closest(".tab--site"), icon = tab.querySelector("img"); return { title:tab.querySelector(".tab-label").textContent, icon:icon?.currentSrc || icon?.src } })()')
+  assert.equal(await inspect('!!document.querySelector(".tab--site img")'), false, 'Loading tab renders a spinner instead of its logo')
+  const expectedPresentation = { title:'拖拽副本', icon:tables.entries.find(row => row.id === 'old').cached_icon }
   win.webContents.sendInputEvent({ type:'mouseDown', button:'left', clickCount:1, ...detachStart })
   win.webContents.sendInputEvent({ type:'mouseMove', x:detachStart.x + 200, y:detachStart.y + 100, modifiers:['leftButtonDown'] })
   await wait(() => requests.some(item => item.action === 'detach' && typeof item.dragOffset === 'number'))
@@ -200,6 +224,19 @@ app.whenReady().then(async () => {
   await inspect('const address = document.querySelector("[aria-label=网站地址]"); address.value = "https://example.com/next"; address.dispatchEvent(new Event("input", { bubbles: true })); address.form.requestSubmit()')
   await wait(() => requests.some(item => item.type === 'open' && item.url === 'https://example.com/next' && item.tabId === 'old'))
   await inspect('document.querySelector(".tab--home").click()')
+  await inspect('[...document.querySelectorAll(".site-card")].find(e => e.textContent.includes("Late cached logo")).click()')
+  await wait(() => requests.some(item => item.type === 'open' && item.tabId === 'late-cached'))
+  await wait(() => inspect('[...document.querySelectorAll(".tab--site")].every(tab => getComputedStyle(tab).transform === "none")'))
+  const lateStart = await inspect('(() => { const r = document.querySelector("[data-tab-id=late-cached]").getBoundingClientRect(); return { x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2) } })()')
+  win.webContents.sendInputEvent({ type:'mouseDown', button:'left', clickCount:1, ...lateStart })
+  win.webContents.sendInputEvent({ type:'mouseMove', x:lateStart.x, y:lateStart.y+100, modifiers:['leftButtonDown'] })
+  await wait(() => requests.some(item => item.action === 'detach' && item.tabId === 'late-cached'))
+  assert.equal(requests.findLast(item => item.action === 'detach').presentation.icon, undefined)
+  win.webContents.sendInputEvent({ type:'mouseUp', button:'left', clickCount:1, x:lateStart.x, y:lateStart.y+100 })
+  await wait(() => Boolean(finishLateIcon))
+  finishLateIcon(uploadedLogo)
+  await wait(() => requests.some(item => item.action === 'presentation' && item.tabId === 'late-cached' && item.presentation.icon?.startsWith('data:image/png;base64,')))
+  assert.equal(requests.findLast(item => item.action === 'presentation' && item.tabId === 'late-cached').presentation.icon, tables.entries.find(row => row.id === 'late-cached').cached_icon)
   await win.loadURL(url)
   await wait(() => inspect('document.body.innerText.includes("已修改")'))
   await wait(() => inspect('[...document.querySelectorAll(".site-card")].find(e => e.textContent.includes("已修改")).querySelector("img")?.naturalWidth > 0'))

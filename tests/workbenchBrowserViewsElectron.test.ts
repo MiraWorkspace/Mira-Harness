@@ -27,9 +27,9 @@ app.setPath('userData', require('path').join(__dirname, 'profile'))
 app.whenReady().then(async () => {
  let owner, server, browser
  try {
-  let requests = 0, slowResponse, externalUrl
+  let requests = 0, slowResponse, lateResponse, externalUrl
   shell.openExternal = async url => { externalUrl = url }
-  server = http.createServer((req, res) => { requests++; if (req.url === '/slow') { slowResponse = res; return } if (req.url === '/redirect') { res.writeHead(302, { Location:'/next' }); res.end(); return } res.setHeader('Content-Security-Policy', "frame-ancestors 'none'"); res.end('<title>Loaded page</title><a href="/next">Next</a>') })
+  server = http.createServer((req, res) => { requests++; if (req.url === '/late-icon-page') { lateResponse = res; return } if (req.url === '/late-icon.svg') { res.setHeader('Content-Type', 'image/svg+xml'); res.end('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="8" fill="green"/></svg>'); return } if (req.url === '/slow') { slowResponse = res; return } if (req.url === '/redirect') { res.writeHead(302, { Location:'/next' }); res.end(); return } res.setHeader('Content-Security-Policy', "frame-ancestors 'none'"); res.end('<title>Loaded page</title><a href="/next">Next</a>') })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   owner = new BrowserWindow({ show: false, width: 1100, height: 700, minWidth: 1024, minHeight: 680 })
   await owner.loadURL('about:blank')
@@ -83,6 +83,24 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin') {
    if (detachedWindow.getContentBounds().y !== detachedWindow.getBounds().y) throw Error('Native title bar still takes a separate row')
    if (JSON.stringify(detachedWindow.getWindowButtonPosition()) !== JSON.stringify({ x:12, y:17 })) throw Error('Traffic lights do not align with toolbar')
+  }
+  if (process.platform === 'darwin') {
+   const padding = () => inspectToolbar('getComputedStyle(document.querySelector("header")).paddingLeft')
+   if (await padding() !== '80px') throw Error('Windowed traffic light space missing')
+   const transition = async fullScreen => {
+    const finished = new Promise(resolve => detachedWindow.once(fullScreen ? 'enter-full-screen' : 'leave-full-screen', resolve))
+    detachedWindow.setFullScreen(fullScreen)
+    await finished
+    await wait(async () => await padding() === (fullScreen ? '16px' : '80px'))
+   }
+   await transition(true)
+   if (view.getBounds().y !== 96 || view.getBounds().width !== detachedWindow.getContentSize()[0]) throw Error('Fullscreen changed browser toolbar or page layout')
+   if (process.env.DETACHED_SCREENSHOTS) {
+    const fs = require('fs'), path = require('path')
+    fs.mkdirSync(process.env.DETACHED_SCREENSHOTS, { recursive:true })
+    fs.writeFileSync(path.join(process.env.DETACHED_SCREENSHOTS, 'fullscreen.png'), (await detachedWindow.webContents.capturePage({ x:0,y:0,width:1024,height:96 })).toPNG())
+   }
+   await transition(false)
   }
   for (const action of ['pin', 'reattach']) {
    const point = await inspectToolbar('(() => { const r = document.querySelector("[data-action=' + action + ']").getBoundingClientRect(); return { x:Math.round(r.x + r.width/2), y:Math.round(r.y + r.height/2) } })()')
@@ -152,6 +170,24 @@ app.whenReady().then(async () => {
   await detachedWindow.webContents.executeJavaScript('document.querySelector("[data-action=reattach]").click()')
   await wait(() => detachedWindow.isDestroyed())
   if (!owner.contentView.children.includes(view) || await guest.executeJavaScript('window.retainedValue') !== 42) throw Error('Reattach lost live page state')
+  browser.open('one', original + 'late-icon-page')
+  await wait(() => Boolean(lateResponse) && guest.isLoading())
+  browser.control('one', 'detach', false, undefined, { title:'Still loading' })
+  const lateWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
+  const lateToolbar = code => lateWindow.webContents.executeJavaScript(code)
+  await wait(() => lateToolbar('!!document.querySelector(".identity-icon img")'))
+  if (await lateToolbar('!!document.querySelector(".identity-icon img").getAttribute("src")')) throw Error('Loading window unexpectedly has an icon')
+  lateResponse.end('<title>Finished loading</title><link rel="icon" href="/late-icon.svg">')
+  await wait(() => lateToolbar('document.querySelector(".identity-icon img")?.naturalWidth > 0 && !document.querySelector(".identity-icon img").hidden'))
+  if (!await lateToolbar('document.querySelector(".identity-icon img").src.endsWith("/late-icon.svg")')) throw Error('Late favicon was not synchronized')
+  browser.control('one', 'presentation', false, undefined, { icon:'data:image/png;base64,broken' })
+  await wait(() => lateToolbar('document.querySelector(".identity-icon img").hidden && document.querySelector(".identity-icon img").complete && !document.querySelector(".identity-icon img").naturalWidth'))
+  browser.control('one', 'presentation', false, undefined, { icon })
+  await wait(() => lateToolbar('document.querySelector(".identity-icon img").naturalWidth > 0 && !document.querySelector(".identity-icon img").hidden'))
+  browser.control('one', 'mute', false)
+  if (await lateToolbar('document.querySelector(".identity-icon img").src') !== icon) throw Error('Favicon replaced preferred icon')
+  browser.control('one', 'reattach')
+  await wait(() => lateWindow.isDestroyed())
   browser.control('one', 'detach')
   const closedWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
   closedWindow.close()
