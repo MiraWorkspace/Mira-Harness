@@ -1,4 +1,4 @@
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"
 
 /** Restricts same-origin package access; remote scripts are blocked by CSP. */
 export function appNetworkPolicy(entry: string) {

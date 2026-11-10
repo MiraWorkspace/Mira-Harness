@@ -17,5 +17,6 @@ describe('application package network isolation', () => {
     expect(headers['content-security-policy'][1]).toContain("script-src 'self'")
     expect(headers['content-security-policy'][1]).toContain("frame-src 'none'")
     expect(headers['content-security-policy'][1]).toContain("worker-src 'none'")
+    expect(headers['content-security-policy'][1]).toContain('img-src \'self\' data: blob: https:')
   })
 })
