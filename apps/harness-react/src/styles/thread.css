@@ -231,7 +231,9 @@
 @keyframes mira-working-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .mira-working-indicator > span { background: none; -webkit-text-fill-color: currentColor; } }
 .mira-reasoning > summary > svg:last-child { transition: transform 150ms ease-out; }
-.mira-reasoning[open] > summary > svg:last-child { transform: rotate(180deg); }
+.mira-reasoning[open] > summary > svg:last-child { transform: rotate(90deg); }
+.mira-run-chevron { transition: transform 150ms ease-out; }
+details[open] > summary > .mira-run-chevron { transform: rotate(90deg); }
 .mira-reasoning > summary:hover { color: var(--color-foreground); }
 .mira-reasoning > summary:focus-visible, .mira-tool-summary:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 3px; border-radius: 3px; }
 .mira-reasoning > summary > small { font-size: 11px; }
@@ -276,6 +278,9 @@
 @keyframes mira-tool-working { 0% { background-position: 100% 0; } 50%, 100% { background-position: 0% 0; } }
 .mira-tool-record-action { display: inline-flex; flex: none; width: 24px; height: 24px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--color-foreground-subtle); opacity: 0; cursor: pointer; }
 .mira-tool-summary:hover .mira-tool-record-action, .mira-tool-summary:focus-within .mira-tool-record-action { opacity: 1; }
+.mira-tool-record-action > .mira-tool-chevron { transition: transform 200ms ease-out; }
+.mira-tool-record-action[data-tool-record-toggle][data-state='open'] { opacity: 1; }
+.mira-tool-record-action[data-state='open'] > .mira-tool-chevron { transform: rotate(90deg); }
 .mira-tool-record-action:hover { color: var(--color-foreground); background: var(--color-hover); }
 .mira-tool-record-action:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .mira-tool-exploration > .mira-tool-summary { padding: 4px 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; }
@@ -351,7 +356,7 @@
 .mira-tool-diff [data-diff-kind='removed'] [data-diff-number] { color: var(--color-diff-removed); background: color-mix(in srgb, var(--color-diff-removed) 18%, var(--color-card)); }
 .dark .mira-tool-diff [data-diff-token] { color: var(--shiki-dark, inherit) !important; font-style: var(--shiki-dark-font-style, inherit) !important; font-weight: var(--shiki-dark-font-weight, inherit) !important; text-decoration: var(--shiki-dark-text-decoration, inherit) !important; }
 .mira-tool-record[data-tool-status='failed'] > .mira-tool-summary > svg:first-child, .mira-tool-error { color: var(--color-destructive); }
-@media (prefers-reduced-motion: reduce) { .mira-reasoning > summary > svg:last-child, .mira-tool-summary > .mira-tool-chevron { transition: none; } .mira-process-sweep, .mira-tool-record[data-tool-status='running'] > .mira-tool-summary > strong, .mira-tool-exploration[data-tool-group-live='true'] > .mira-tool-summary > strong { animation: none; background: none; color: var(--color-foreground-subtle); -webkit-text-fill-color: currentColor; } }
+@media (prefers-reduced-motion: reduce) { .mira-reasoning > summary > svg:last-child, .mira-run-chevron, .mira-tool-summary > .mira-tool-chevron, .mira-tool-record-action > .mira-tool-chevron { transition: none; } .mira-process-sweep, .mira-tool-record[data-tool-status='running'] > .mira-tool-summary > strong, .mira-tool-exploration[data-tool-group-live='true'] > .mira-tool-summary > strong { animation: none; background: none; color: var(--color-foreground-subtle); -webkit-text-fill-color: currentColor; } }
 .mira-context-menu { width: 290px; max-width: min(290px, calc(100vw - 24px)); }
 .mira-context-path { margin: 0; padding: 4px 8px 10px; overflow-wrap: anywhere; color: var(--color-foreground); font-size: 12px; }
 .mira-context-info { padding: 8px; }

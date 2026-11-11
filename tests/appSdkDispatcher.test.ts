@@ -20,9 +20,69 @@ function fixture() {
 }
 
 describe('application SDK dispatch', () => {
+  it('requires both capabilities for autonomous web chat and rechecks search permission before delivering answers', async () => {
+    const { runtime, app, session, services } = fixture()
+    let finish!: (value: any) => void
+    const chat = vi.fn((_input: any, _authorize?: () => void) => new Promise<any>(resolve => { finish = resolve }))
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, chat })
+    const input = { providerId: 'p', modelId: 'm', webSearch: true, messages: [{ role: 'user', content: 'search' }] }
+    await expect(dispatcher.invoke(session, 1, 'models.chat', input)).rejects.toThrow('权限')
+    expect(chat).not.toHaveBeenCalled()
+    app.requiredCapabilities.push('web:search'); runtime.approve(app.id, app.installationId, app.requiredCapabilities)
+    const approved = runtime.open(app.id, 1), pending = dispatcher.invoke(approved, 1, 'models.chat', input)
+    const authorize = chat.mock.calls[0][1]!
+    expect(() => authorize()).not.toThrow()
+    runtime.revokeApproval(app.id)
+    expect(() => authorize()).toThrow('授权')
+    finish({ text: 'late', sources: [] })
+    await expect(pending).rejects.toThrow('授权')
+    runtime.close()
+  })
+
+  it('does not forward search without web permission and drops delayed results after revocation', async () => {
+    const { runtime, app, services, session } = fixture()
+    let finish!: (value: any) => void
+    const search = vi.fn(() => new Promise<any>(resolve => { finish = resolve }))
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, search })
+    await expect(dispatcher.invoke(session, 1, 'web.search', { query: 'TypeScript' })).rejects.toThrow('权限')
+    expect(search).not.toHaveBeenCalled()
+    app.requiredCapabilities.push('web:search'); runtime.approve(app.id, app.installationId, app.requiredCapabilities)
+    const approved = runtime.open(app.id, 1)
+    const pending = dispatcher.invoke(approved, 1, 'web.search', { query: 'TypeScript', limit: 3, engine: 'bing', appId: 'forged', url: 'http://private' })
+    expect(search).toHaveBeenCalledExactlyOnceWith({ query: 'TypeScript', limit: 3, engine: 'bing' })
+    runtime.revokeApproval(app.id); finish({ results: [{ title: 'late result' }] })
+    await expect(pending).rejects.toThrow('授权无效')
+    runtime.close()
+  })
+
+  it('authorizes model discovery and chat and binds the real caller identity', async () => {
+    const { runtime, services, session } = fixture()
+    const listProviders = vi.fn(() => [{ id: 'p', name: 'Provider' }]), listModels = vi.fn(() => [{ id: 'm', name: 'Model' }]), chat = vi.fn(async () => ({ text: 'reply' }))
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, listProviders, listModels, chat })
+    expect(await dispatcher.invoke(session, 1, 'models.listProviders')).toEqual([{ id: 'p', name: 'Provider' }])
+    expect(await dispatcher.invoke(session, 1, 'models.listModels', { providerId: 'p' })).toEqual([{ id: 'm', name: 'Model' }])
+    const messages = [{ role: 'user', content: 'Hi' }]
+    await dispatcher.invoke(session, 1, 'models.chat', { appId: 'forged', providerId: 'p', modelId: 'm', messages })
+    expect(chat).toHaveBeenCalledExactlyOnceWith({ appId: 'sample', providerId: 'p', modelId: 'm', messages, system: undefined }, expect.any(Function))
+    await expect(dispatcher.invoke(session, 1, 'models.chat', { messages })).rejects.toThrow('请求参数无效')
+    runtime.revokeApproval('sample')
+    await expect(dispatcher.invoke(session, 1, 'models.listProviders')).rejects.toThrow('授权无效')
+    runtime.close()
+  })
+
+  it('suppresses chat results after approval is revoked', async () => {
+    const { runtime, services, session } = fixture()
+    let finish!: (value: { text: string }) => void
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, chat: () => new Promise(resolve => { finish = resolve }) })
+    const pending = dispatcher.invoke(session, 1, 'models.chat', { providerId: 'p', modelId: 'm', messages: [{ role: 'user', content: 'Hi' }] })
+    runtime.revokeApproval('sample'); finish({ text: 'late private response' })
+    await expect(pending).rejects.toThrow('授权无效')
+    runtime.close()
+  })
+
   it('uses session identity for storage and approved capabilities', async () => {
     const { runtime, dispatcher, session, services } = fixture()
-    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 2 } })
+    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 3 } })
     await dispatcher.invoke(session, 1, 'storage.migrate', { migrations: [{ version: 1, tables: [{ name: 'items', columns: [{ name: 'id', type: 'TEXT' }] }] }] })
     await dispatcher.invoke(session, 1, 'storage.transaction', { operations: [{ type: 'insert', table: 'items', values: { id: 'saved' } }] })
     expect(await dispatcher.invoke(session, 1, 'appearance.get')).toBe('dark')

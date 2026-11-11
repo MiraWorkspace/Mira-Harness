@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppRuntime, type InstalledPlatformApp } from '../electron/services/appRuntime'
 import { AppSdkDispatcher } from '../electron/services/appSdkDispatcher'
 import { AppSdkConnection } from '../electron/services/appSdkConnection'
+import { AppModelError } from '../electron/services/appModelError'
+import { AppWebError, AppWebService } from '../electron/services/appWebService'
 import { MiraAppSdk } from '@mira/app-sdk'
 
 const roots: string[] = []
@@ -18,7 +20,8 @@ function fixture(capabilities = ['storage:app', 'appearance:read', 'models:gener
   const runtime = new AppRuntime(root, persistence, id => id === app.id ? app : undefined)
   runtime.approve(app.id, app.installationId, app.requiredCapabilities)
   const session = runtime.open(app.id, 1)
-  const services = { getTheme: () => 'dark' as const, generate: vi.fn(async () => ({ text: 'result' })), notify: vi.fn(async () => undefined) }
+  const web = new AppWebService(async () => new Response('<li class="b_algo"><h2><a href="https://www.typescriptlang.org/">TypeScript</a></h2></li>'))
+  const services = { getTheme: () => 'dark' as const, generate: vi.fn(async () => ({ text: 'result' })), listProviders: vi.fn(() => [{ id: 'p', name: 'Provider' }]), listModels: vi.fn(() => [{ id: 'm', name: 'Model' }]), chat: vi.fn(async () => ({ text: 'reply' })), search: vi.fn((input: Parameters<AppWebService['search']>[0]) => web.search(input)), notify: vi.fn(async () => undefined) }
   const dispatcher = new AppSdkDispatcher(runtime, services), channel = new MessageChannel()
   const connection = new AppSdkConnection(channel.port1 as unknown as MessagePort, dispatcher, runtime, session, 1)
   const sdk = new MiraAppSdk(channel.port2 as unknown as MessagePort, 1000)
@@ -26,6 +29,36 @@ function fixture(capabilities = ['storage:app', 'appearance:read', 'models:gener
 }
 
 describe('application SDK connection', () => {
+  it('requires a separate search grant and serves the built-in search adapter through the public SDK', async () => {
+    const denied = fixture(['models:generate'])
+    try {
+      await expect(denied.sdk.web.search({ query: 'TypeScript' })).rejects.toMatchObject({ code: 'CAPABILITY_DENIED' })
+      expect(denied.services.search).not.toHaveBeenCalled()
+    } finally { denied.connection.close(); denied.sdk.dispose(); denied.runtime.close() }
+    const { sdk, services, connection, runtime } = fixture(['web:search'])
+    try {
+      expect(await sdk.web.search({ query: 'TypeScript', engine: 'bing' })).toMatchObject({ engine: 'bing', results: [{ title: 'TypeScript', url: 'https://www.typescriptlang.org/' }] })
+      await expect(sdk.web.search({ query: 'TypeScript', limit: 11 })).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+      services.search.mockRejectedValueOnce(new AppWebError('WEB_SEARCH_FAILED', '搜索暂不可用'))
+      await expect(sdk.web.search({ query: 'TypeScript' })).rejects.toMatchObject({ code: 'WEB_SEARCH_FAILED', message: '搜索暂不可用' })
+    } finally { connection.close(); sdk.dispose(); runtime.close() }
+  })
+
+  it('exposes provider/model selection and conversation through the public SDK with safe model errors', async () => {
+    const { runtime, connection, sdk, services } = fixture()
+    try {
+      expect(await sdk.models.listProviders()).toEqual([{ id: 'p', name: 'Provider' }])
+      expect(await sdk.models.listModels('p')).toEqual([{ id: 'm', name: 'Model' }])
+      const input = { providerId: 'p', modelId: 'm', messages: [{ role: 'user' as const, content: 'Hello' }] }
+      expect(await sdk.models.chat(input)).toEqual({ text: 'reply' })
+      expect(services.chat).toHaveBeenCalledWith({ ...input, appId: 'sample', system: undefined }, expect.any(Function))
+      services.generate.mockRejectedValueOnce(new AppModelError('MODEL_NOT_CONFIGURED', '请先选择供应商和模型，或在 Mira 设置默认模型'))
+      await expect(sdk.models.generate({ prompt: 'hi' })).rejects.toMatchObject({ code: 'MODEL_NOT_CONFIGURED', message: '请先选择供应商和模型，或在 Mira 设置默认模型' })
+      services.chat.mockRejectedValueOnce(new Error('secret-key internal endpoint'))
+      await expect(sdk.models.chat(input)).rejects.toMatchObject({ code: 'PLATFORM_ERROR', message: '应用请求失败，请检查参数后重试' })
+    } finally { connection.close(); sdk.dispose(); runtime.close() }
+  })
+
   it('connects a client to its approved storage and revokes on closure', async () => {
     const { runtime, session, connection, sdk } = fixture()
     expect(await sdk.context.get()).toMatchObject({ appId: 'sample' })

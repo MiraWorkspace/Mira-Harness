@@ -111,6 +111,10 @@ export class WorkbenchBrowserViews {
       this.sync()
       this.emit({ type: 'detached', tabId, detached: false })
       this.state(tabId)
+    }, onClose: () => {
+      if (this.tabs.get(tabId) !== tab) return
+      this.close(tabId)
+      this.emit({ type: 'closed', tabId })
     } })
     this.emit({ type: 'detached', tabId, detached: true })
     this.state(tabId)

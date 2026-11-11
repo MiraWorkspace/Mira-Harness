@@ -5,6 +5,7 @@ import type { MiraGitAction } from '../../src/config/miraGit'
 import { Agent, createBashTool, createEditTool, createReadTool, createWriteTool, estimateContextTokens, estimateTokens, generateSummaryWithUsage } from '@earendil-works/pi-agent-core'
 import { boundHarnessText, createSandboxedEnv, publicHarnessText, publicHarnessToolInput, publicHarnessToolOutput, wrapHarnessTool } from './agentTools'
 import { MiraCommandJobs } from './miraCommandJobs'
+import { createWebSearchState } from '../adapters/webSearch'
 import { applyMiraFileRewind, buildMiraFileRewindPlan, compensateMiraFileRewind, miraPendingFileRewindPreview, previewMiraFileRewind, readMiraCheckpointFile } from './miraFileRewind'
 import type { MiraHistoryEditBlocked, MiraHistoryEditWorkspace } from '../../src/config/miraFileRewind'
 import { createWebCitationContext, createWebFetchTool, createWebSearchTool, type WebRequest } from '../adapters/webTools'
@@ -339,6 +340,7 @@ export class HarnessRuntime {
   private readonly messageQueue: HarnessMessageQueue
   private readonly assistantSnapshotFlushers = new Map<string, () => void>()
   private readonly commandJobs = new MiraCommandJobs()
+  private readonly webSearchState = createWebSearchState()
   private readonly hookStartedSessions = new Set<string>()
   private readonly pluginMcpConnections = new Map<string, HarnessPluginMcp>()
   private readonly projectMcpConnections = new Map<string, HarnessProjectMcp>()
@@ -1407,7 +1409,7 @@ export class HarnessRuntime {
     })
     const webCitations = createWebCitationContext()
     const webFetchTool = register(wrapRecordTool(createWebFetchTool(webCitations, this.webRequest), params => params.url ?? ''), { risk: 'read', title: () => '', detail: () => '' })
-    const webSearchTool = register(wrapRecordTool(createWebSearchTool(webCitations, this.webRequest), params => params.query ?? ''), { risk: 'read', title: () => '', detail: () => '' })
+    const webSearchTool = register(wrapRecordTool(createWebSearchTool(webCitations, this.webRequest, this.webSearchState), params => params.query ?? ''), { risk: 'read', title: () => '', detail: () => '' })
     const childTask = options.subtaskId ? session().activeRun?.subtasks.find(task => task.id === options.subtaskId) : undefined
     const childName = childTask ? publicHarnessText(childTask.agentName || MIRA_SUBTASK_AGENTS[childTask.role].label, secrets).text : undefined
     const mcpTools = (options.mcpTools ?? [...this.mcpManager.getTools(session().activeMcpServerIds || []), ...(options.pluginMcp?.getTools() || [])]).map(tool => {

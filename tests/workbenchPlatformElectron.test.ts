@@ -8,24 +8,38 @@ import { build } from 'esbuild'
 import { expect, it } from 'vitest'
 
 it('hosts miniapps in Workbench over generic file/view SDKs with independent storage and revocable permissions', async () => {
+  expect(await runWorkbench()).toEqual({ migrated: true, ownedByWorkbench: true, storage: true, model: true, filePermissions: true, revoked: true, updated: true, uninstalled: true })
+}, 70000)
+
+it('routes provider selection, model selection and multi-turn chat through Workbench in Electron', async () => {
+  expect(await runWorkbench(true)).toEqual({ modelSelectionAndChat: true })
+}, 70000)
+
+it('routes SDK web search and autonomous web chat through Workbench in Electron', async () => {
+  expect(await runWorkbench(false, true)).toEqual({ webSearch: true })
+}, 70000)
+
+async function runWorkbench(modelsOnly = false, searchOnly = false) {
   const root = resolve('.'), workbench = resolve('../Mira-Workbench'), temp = await mkdtemp(join(tmpdir(), 'workbench-owned-e2e-'))
   try {
     await promisify(execFile)(process.execPath, [resolve(workbench, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', join(temp, 'workbench')], { cwd: workbench, timeout: 30000 })
     await build({ stdin: { contents: entry, resolveDir: root, loader: 'ts' }, outfile: join(temp, 'platform.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'], plugins: [{ name: 'native-sqlite', setup: builder => builder.onResolve({ filter: /^better-sqlite3$/ }, () => ({ path: createRequire(import.meta.url).resolve('better-sqlite3'), external: true })) }] })
     await build({ stdin: { contents: childApp, resolveDir: workbench, loader: 'ts' }, outfile: join(temp, 'child.js'), bundle: true, format: 'esm' })
     await writeFile(join(temp, 'main.cjs'), main)
-    const env = { ...process.env, NODE_PATH: join(root, 'node_modules'), WORKBENCH_DIST: join(temp, 'workbench'), APP_PRELOAD: join(root, 'electron/preload/appHost.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
+    const env = { ...process.env, SEARCH_ONLY: searchOnly ? '1' : '', MODELS_ONLY: modelsOnly ? '1' : '', NODE_PATH: join(root, 'node_modules'), WORKBENCH_DIST: join(temp, 'workbench'), APP_PRELOAD: join(root, 'electron/preload/appHost.cjs') }; delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS
     const { stdout, stderr } = await promisify(execFile)(createRequire(import.meta.url)('electron'), [join(temp, 'main.cjs')], { env, timeout: 45000 })
     const line = stdout.split('\n').find(value => value.startsWith('RESULT='))
     if (!line) throw new Error(stdout + stderr)
-    expect(JSON.parse(line.slice(7))).toEqual({ migrated: true, ownedByWorkbench: true, storage: true, model: true, filePermissions: true, revoked: true, updated: true, uninstalled: true })
+    return JSON.parse(line.slice(7))
   } finally { await rm(temp, { recursive: true, force: true }) }
-}, 70000)
+}
 
 const entry = `
 export { handleDetachedViewCommand } from './electron/services/detachedViewWindow'
 export { AppRuntime } from './electron/services/appRuntime'
 export { AppSdkDispatcher } from './electron/services/appSdkDispatcher'
+export { AppWebService } from './electron/services/appWebService'
+export { AppModelService } from './electron/services/appModelService'
 export { AppViewManager } from './electron/services/appViewManager'
 export { createMiraMainWindow } from './electron/bootstrap/miraMainWindow'
 export { LocalMicroAppServer } from './electron/adapters/localMicroAppServer'
@@ -49,13 +63,22 @@ window.saveDraft = async () => {
  await sdk.storage.transaction([{ type: 'delete', table: 'drafts', where: { id: 'draft' } }, { type: 'insert', table: 'drafts', values: { id: 'draft', text: document.querySelector('#draft').value } }])
  document.querySelector('#result').textContent = (await sdk.models.generate({ prompt: 'hello' })).text
 }
+window.chat = async () => {
+ const providers = await sdk.models.listProviders()
+ const models = await sdk.models.listModels(providers[0].id)
+ const input = { providerId: providers[0].id, modelId: models[0].id }
+ const messages = [{ role: 'user', content: 'My name is Mira' }]
+ const first = await sdk.models.chat({ ...input, messages })
+ messages.push({ role: 'assistant', content: first.text }, { role: 'user', content: 'What is my name?' })
+ return sdk.models.chat({ ...input, messages })
+}
 document.querySelector('#ready').textContent = 'ready'
 `
 const main = `
 const { app, ipcMain, webContents, BrowserWindow, screen } = require('electron')
 const assert = require('node:assert/strict')
 const fs = require('fs'), path = require('path'), crypto = require('crypto')
-const { handleDetachedViewCommand, AppRuntime, AppSdkDispatcher, AppViewManager, createMiraMainWindow, LocalMicroAppServer, MiraApps, MiraPaths, AppDatabase, AppFiles, LegacyWorkbenchMiniapps, zipSync, strToU8 } = require('./platform.cjs')
+const { handleDetachedViewCommand, AppRuntime, AppSdkDispatcher, AppWebService, AppModelService, AppViewManager, createMiraMainWindow, LocalMicroAppServer, MiraApps, MiraPaths, AppDatabase, AppFiles, LegacyWorkbenchMiniapps, zipSync, strToU8 } = require('./platform.cjs')
 app.setPath('userData', path.join(__dirname, 'profile'))
 app.whenReady().then(async () => {
  let owner, server, runtime, views, websiteServer
@@ -63,7 +86,7 @@ app.whenReady().then(async () => {
   const root = path.join(__dirname, 'data'), paths = new MiraPaths(root).ensure(), dataRoot = path.join(root, 'app-data')
   fs.cpSync(process.env.WORKBENCH_DIST, path.join(paths.apps, 'mira-workbench'), { recursive: true })
   const legacyDir = path.join(paths.apps, '.miniapps', 'sdk-test'); fs.mkdirSync(legacyDir, { recursive: true })
-  const manifest = { manifestVersion: 1, id: 'sdk-test', name: '独立小程序', version: '1.0.0', entry: 'index.html', icon: 'icon.svg', requiredCapabilities: ['storage:app', 'models:generate', 'files:read', 'files:write'] }
+  const manifest = { manifestVersion: 1, id: 'sdk-test', name: '独立小程序', version: '1.0.0', entry: 'index.html', icon: 'icon.svg', requiredCapabilities: ['storage:app', 'models:generate', 'web:search', 'files:read', 'files:write'] }
   const html = '<!doctype html><p id="identity"></p><input id="draft"><p id="result"></p><p id="ready"></p><script type="module" src="child.js"></script>'
   fs.writeFileSync(path.join(legacyDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"><circle cx="9" cy="9" r="8" fill="green"/></svg>')
   fs.writeFileSync(path.join(legacyDir, 'app-manifest.json'), JSON.stringify(manifest))
@@ -79,8 +102,31 @@ app.whenReady().then(async () => {
   runtime = new AppRuntime(dataRoot, { get: id => approvals.get(id), set: (id, value) => approvals.set(id, value), delete: id => approvals.delete(id) }, id => apps.resolvePlatformApp(id))
   const files = new AppFiles(dataRoot), legacy = new LegacyWorkbenchMiniapps(paths.apps, dataRoot), methods = []
   const directory = path.join(root, 'selected'); fs.mkdirSync(directory); fs.writeFileSync(path.join(directory, 'read.txt'), 'readable')
+  const searches = []
+  const web = new AppWebService(async (url, init) => {
+   searches.push(url); assert.equal(init.credentials, 'omit')
+   return new Response('<li class="b_algo"><h2><a href="https://www.typescriptlang.org/">TypeScript 官方文档</a></h2><p>Official docs</p></li>')
+  })
+  let webTurn = 0
+  const model = { id:'m', enabled:true, reasoning:false }, provider = { id:'p', name:'Provider', enabled:true, authMode:'none', endpoint:'https://example.com', models:[model] }
+  const webModel = new AppModelService({ get:()=>provider, getSecret:()=>'', list:()=>[provider], bindings:()=>({}) }, () => ({ model:{}, models:{ completeSimple:async () => {
+   webTurn++
+   return webTurn === 1 ? { role:'assistant', stopReason:'toolUse', content:[{ type:'toolCall', id:'search', name:'web_search', arguments:{ query:'TypeScript' } }] }
+    : webTurn === 2 ? { role:'assistant', stopReason:'toolUse', content:[{ type:'toolCall', id:'read', name:'web_fetch', arguments:{ url:'https://www.typescriptlang.org/' } }] }
+    : { role:'assistant', stopReason:'stop', content:[{ type:'text', text:'Read TypeScript docs [[source:2]]' }] }
+  } } }), web)
   const dispatcher = new AppSdkDispatcher(runtime, {
    getTheme: () => 'light', generate: async () => ({ text: 'model-result' }), notify: async () => {}, readLegacyWorkbenchSites: async () => null,
+   search: input => web.search(input),
+   listProviders: () => [{ id: 'p', name: 'Provider' }],
+   listModels: id => { assert.equal(id, 'p'); return [{ id: 'm', name: 'Model' }] },
+   chat: async (input, authorize) => {
+    assert.equal(input.appId, 'mira-workbench'); assert.equal(input.providerId, 'p'); assert.equal(input.modelId, 'm')
+    if (input.webSearch) return webModel.chat(input, authorize)
+    if (input.messages.length === 1) return { text: 'Hello Mira' }
+    assert.deepEqual(input.messages, [{ role:'user', content:'My name is Mira' }, { role:'assistant', content:'Hello Mira' }, { role:'user', content:'What is my name?' }])
+    return { text: 'Mira' }
+   },
    workbenchBrowser: (id, input) => views.workbenchBrowser(id, input), legacyMiniapps: (id, input) => legacy.read(id, input),
    files: (appId, ownerId, method, input) => {
     methods.push(method)
@@ -117,6 +163,18 @@ app.whenReady().then(async () => {
   if (await child.executeJavaScript('document.querySelector("#draft").value') !== 'legacy-draft') throw Error('legacy SQLite data not migrated')
   await child.executeJavaScript('document.querySelector("#draft").value = "retained"; window.saveDraft()')
   if (await child.executeJavaScript('document.querySelector("#result").textContent') !== 'model-result') throw Error('model not routed')
+  assert.deepEqual(await child.executeJavaScript('window.chat()'), { text: 'Mira' })
+  if (process.env.SEARCH_ONLY) {
+   const result = await child.executeJavaScript('window.testSdk.web.search({ query: "TypeScript 官方文档", limit: 3, engine: "bing" })')
+   assert.equal(result.engine, 'bing')
+   assert.deepEqual(result.results, [{ title: 'TypeScript 官方文档', url: 'https://www.typescriptlang.org/', snippet: 'Official docs' }])
+   assert.equal(searches.length, 1); assert.ok(searches[0].startsWith('https://cn.bing.com/search?q='))
+   const answer = await child.executeJavaScript('window.testSdk.models.chat({ providerId:"p", modelId:"m", webSearch:true, messages:[{role:"user",content:"Search and read docs"}] })')
+   assert.equal(webTurn, 3); assert.equal(answer.text, 'Read TypeScript docs [[source:2]]'); assert.equal(answer.sources.length, 2)
+   assert.equal(searches.length, 3)
+   console.log('RESULT=' + JSON.stringify({ webSearch: true })); return
+  }
+  if (process.env.MODELS_ONLY) { console.log('RESULT=' + JSON.stringify({ modelSelectionAndChat: true })); return }
   const childMenu = async label => {
    await inspect('document.querySelector(".tab--site").dispatchEvent(new MouseEvent("contextmenu", { bubbles:true, clientX:140,clientY:25 }))')
    await wait(() => inspect('!!document.querySelector(".tab-context-menu")'))

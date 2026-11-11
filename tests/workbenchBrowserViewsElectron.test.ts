@@ -210,11 +210,15 @@ app.whenReady().then(async () => {
    await closedWindow.webContents.executeJavaScript('document.querySelector("[data-action=close]").click()')
   } else closedWindow.close()
   await wait(() => closedWindow.isDestroyed())
-  if (!owner.contentView.children.includes(view) || guest.isDestroyed()) throw Error('Closing detached window destroyed page')
+  await wait(() => guest.isDestroyed())
+  if (owner.contentView.children.includes(view)) throw Error('Closing detached window reattached page')
+  browser.open('one', 'http://127.0.0.1:' + server.address().port + '/')
+  const freshGuest = webContents.getAllWebContents().find(value => value.session === session.fromPartition('persist:mira-workbench'))
+  if (!freshGuest || freshGuest.id === guestId) throw Error('Closed page was reused')
   browser.control('one', 'detach')
   const disposingWindow = BrowserWindow.getAllWindows().find(window => window !== owner)
   browser.dispose()
-  await wait(() => guest.isDestroyed() && disposingWindow.isDestroyed())
+  await wait(() => freshGuest.isDestroyed() && disposingWindow.isDestroyed())
   console.log('RESULT=' + JSON.stringify({ title, partition, back: true, hidden, closed: true, detached: true, reattached: true, pinned: true }))
  } catch (error) { console.error(error); process.exitCode = 1 }
  finally { browser?.dispose(); owner?.destroy(); server?.close(); app.quit() }

@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef } from 'react'
-import { Brain, ChevronDown, ShieldCheck } from 'lucide-react'
+import { Brain, ChevronRight, ShieldCheck } from 'lucide-react'
 import type { HarnessMessage, HarnessMessagePart, HarnessPermissionRequest, HarnessSubtask, ToolCallRecord } from '../../../../../src/config/harness'
 import { MiraQueuedSummary, MiraStreamEntrance } from './MiraStreamMotion'
 import { MessageMarkdown } from './markdown'
@@ -84,7 +84,7 @@ const AssistantReasoning = memo(function AssistantReasoning({ part, memoryKey }:
       <span className={part.state === 'streaming' ? 'mira-process-sweep' : undefined}>{label}{duration !== undefined ? ` · 持续了 ${duration} 秒` : ''}</span>
       {preview && <span ref={previewRef} className="mira-reasoning__preview" aria-hidden="true"><MiraQueuedSummary contentKey={`line:${part.text.trimEnd().split(/\r\n?|\n/).length - 1}`} version={preview} enabled><span>{preview}</span></MiraQueuedSummary></span>}
       {part.truncated && <small>内容已截断</small>}
-      <ChevronDown size={13} aria-hidden="true" />
+      <ChevronRight size={13} aria-hidden="true" />
     </summary>
     {expanded && <div className="mira-reasoning__content"><div data-mira-selectable="reasoning" data-mira-selection-region={part.id}>{part.text}</div>{part.truncated && <p className="mira-payload-truncated" role="note">思考内容超过记录上限，仅保留已记录部分。</p>}</div>}
   </details>

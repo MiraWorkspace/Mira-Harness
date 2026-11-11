@@ -202,7 +202,7 @@ export class AppViewManager {
       item.detached = undefined
       this.syncChildAfterAttach(item)
       this.emitDetached(item, false)
-    } })
+    }, onClose: () => item.cleanup() })
     this.emitDetached(item, true)
   }
 

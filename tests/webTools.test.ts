@@ -8,8 +8,8 @@ function response(body: string, contentType = 'text/html', url = '') {
 }
 
 const searchHtml = (suffix: string) => `
-  <li class="b_algo"><h2><a href="https://example.com/${suffix}-a">标题 A</a></h2><p>摘要 A</p></li>
-  <li class="b_algo"><h2><a href="https://example.com/${suffix}-b">标题 B</a></h2><p>摘要 B</p></li>`
+  <li class="b_algo"><h2><a href="https://example.com/${suffix}-a">标题 A</a></h2><p>摘要 A 第一次 第二次 下一轮 恢复后</p></li>
+  <li class="b_algo"><h2><a href="https://example.com/${suffix}-b">标题 B</a></h2><p>摘要 B 第一次 第二次 下一轮 恢复后</p></li>`
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 

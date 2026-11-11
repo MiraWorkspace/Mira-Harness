@@ -11,7 +11,8 @@ vi.mock('electron', async () => {
     constructor() { mock.windows.push(this) }
     on(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
     once(event: string, listener: (...args: any[]) => void) { this.listeners.set(event, listener); return this }
-    isDestroyed = () => false
+    destroyed = false
+    isDestroyed = () => this.destroyed
     isFullScreen = () => false
     isMaximized = vi.fn(() => false)
     getContentSize = () => [800, 600]
@@ -19,7 +20,12 @@ vi.mock('electron', async () => {
     setMenuBarVisibility = vi.fn()
     setTitleBarOverlay = vi.fn()
     loadURL = vi.fn(async () => undefined)
-    close = vi.fn(() => this.listeners.get('closed')?.())
+    close = vi.fn(() => {
+      if (this.destroyed) return
+      this.listeners.get('close')?.()
+      this.destroyed = true
+      this.listeners.get('closed')?.()
+    })
   }, WebContentsView: class {
     webContents: any
     setBounds = vi.fn()
@@ -31,6 +37,7 @@ vi.mock('electron', async () => {
     }
   } }
 })
+import { handleDetachedViewCommand } from '../electron/services/detachedViewWindow'
 import { WorkbenchBrowserViews } from '../electron/services/workbenchBrowserViews'
 
 function fixture() {
@@ -129,7 +136,7 @@ describe('Workbench browser views', () => {
     browser.dispose()
   })
 
-  it('detaches the existing web view and reattaches it when the detached window closes', () => {
+  it('reattaches the existing web view only on an explicit return command', () => {
     const { browser, owner, app } = fixture()
     browser.open('one', 'https://example.com/')
     const view = mock.views[0]
@@ -142,11 +149,34 @@ describe('Workbench browser views', () => {
     expect(view.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 96, width: 800, height: 504 })
     browser.control('one', 'mute', true)
     expect(view.webContents.setAudioMuted).toHaveBeenCalledWith(true)
-    browser.control('one', 'reattach')
+    handleDetachedViewCommand(detached.webContents as never, 'reattach')
+    expect(view.webContents.close).not.toHaveBeenCalled()
+    expect(app.send).not.toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ type: 'closed' }))
     expect(detached.contentView.removeChildView).toHaveBeenCalledWith(view)
     expect(owner.contentView.addChildView).toHaveBeenLastCalledWith(view)
     expect(app.send).toHaveBeenCalledWith('mira-app:browser-event', expect.objectContaining({ type: 'detached', tabId: 'one', detached: false }))
     browser.dispose()
+  })
+
+  it.each(['native', 'toolbar'])('closes the detached tab through the %s close action without reattaching it', mode => {
+    const { browser, owner, app } = fixture()
+    browser.open('one', 'https://example.com/')
+    const view = mock.views[0]
+    browser.control('one', 'detach')
+    const detached = mock.windows[0]
+    owner.contentView.addChildView.mockClear()
+    app.send.mockClear()
+    if (mode === 'native') detached.close()
+    else handleDetachedViewCommand(detached.webContents as never, 'close')
+    expect(detached.isDestroyed()).toBe(true)
+    expect(detached.close).toHaveBeenCalledOnce()
+    expect(view.webContents.close).toHaveBeenCalledOnce()
+    expect(owner.contentView.addChildView).not.toHaveBeenCalled()
+    expect(owner.show).not.toHaveBeenCalled()
+    expect(app.send).toHaveBeenCalledExactlyOnceWith('mira-app:browser-event', { type: 'closed', tabId: 'one' })
+    expect(() => browser.control('one', 'reload')).toThrow('已关闭')
+    browser.dispose()
+    expect(view.webContents.close).toHaveBeenCalledOnce()
   })
 
   it('reports the newly requested URL when navigation in an existing tab fails', async () => {

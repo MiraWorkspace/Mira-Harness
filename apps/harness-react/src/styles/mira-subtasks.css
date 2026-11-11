@@ -66,7 +66,7 @@
 .mira-subtask-summary > summary strong { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .mira-subtask-summary > summary > svg { flex: none; }
 .mira-subtask-summary > summary > svg:last-child { transition: transform 150ms ease-out; }
-.mira-subtask-summary[open] > summary > svg:last-child { transform: rotate(180deg); }
+.mira-subtask-summary[open] > summary > svg:last-child { transform: rotate(90deg); }
 .mira-subtask-summary .mira-subtask-status-dot { flex: 0 0 5px; margin: 0; }
 .mira-subtask-status-dot[data-status="running"], .mira-subtask-status-dot[data-status="queued"], .mira-subtask-status-dot[data-status="stopping"] { background: var(--color-warning); }
 .mira-subtask-status-dot[data-status="completed"] { background: var(--color-success); }

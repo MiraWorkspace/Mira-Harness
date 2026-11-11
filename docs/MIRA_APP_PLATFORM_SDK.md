@@ -1,4 +1,4 @@
-# Mira 子应用底层 SDK（API 1.2 / SDK 0.2.0）
+# Mira 子应用底层 SDK（API 1.3 / SDK 0.3.0）
 
 Mira 与 Harness 是同一个主应用。Workbench 等第一方可选安装应用称为子应用。Mira 管理这些子应用的安装、身份、隔离存储和原生视图；Workbench 是自己小程序的宿主，拥有小程序包格式、注册表、安装、运行、授权、目录读写权限、更新和卸载逻辑。
 
@@ -12,7 +12,7 @@ Mira / Harness
 
 ## 第一方子应用
 
-第一方子应用使用 `app-manifest.json`，包含 `id`、`name`、SemVer `version`、包内 `entry`、`minShellVersion`、`platformApi`、`requiredCapabilities`。使用 API 1.2 的应用必须声明 `platformApi: { "major": 1, "minor": 2 }`。第一方子应用仍通过调试目录扫描或“发现”安装更新；其生命周期不受 Workbench 管理。子应用不能通过 SDK 选择其他子应用的身份。
+第一方子应用使用 `app-manifest.json`，包含 `id`、`name`、SemVer `version`、包内 `entry`、`minShellVersion`、`platformApi`、`requiredCapabilities`。使用 API 1.3 的应用必须声明 `platformApi: { "major": 1, "minor": 3 }`。第一方子应用仍通过调试目录扫描或“发现”安装更新；其生命周期不受 Workbench 管理。子应用不能通过 SDK 选择其他子应用的身份。
 
 ```ts
 import { connectMiraApp } from '@mira/app-sdk'
@@ -20,9 +20,9 @@ const sdk = await connectMiraApp()
 const context = await sdk.context.get()
 ```
 
-SDK 源码已迁至独立仓库 [Mira-App-SDK](https://github.com/MiraWorkspace/Mira-App-SDK)，不再包含于 Harness 的 `packages` 中。npm 首次发布前，子应用可执行 `npm install github:MiraWorkspace/Mira-App-SDK#v0.2.0`，仍从 `@mira/app-sdk` 导入；GitHub 安装会自动构建 JavaScript 与类型声明，需要开发环境提供 Node.js、npm 和 Git。Harness 的宿主集成测试通过开发依赖使用独立 SDK，并锁定具体 Git 提交，不依赖相邻本地目录。
+SDK 源码已迁至独立仓库 [Mira-App-SDK](https://github.com/MiraWorkspace/Mira-App-SDK)，不再包含于 Harness 的 `packages` 中。0.3.0 已通过 GitHub 标签 `v0.3.0` 分发，尚未发布到 npm。子应用执行 `npm install github:MiraWorkspace/Mira-App-SDK#v0.3.0`，仍从 `@mira/app-sdk` 导入；GitHub 安装会自动构建 JavaScript 与类型声明，需要开发环境提供 Node.js、npm 和 Git。Harness 的宿主集成测试通过开发依赖固定该线上标签，锁文件记录确切提交，不依赖临时本地包或相邻源码目录。
 
-SDK 已配置为可发布到 npm 的公共包；正式发布后，子应用可改用 `npm install @mira/app-sdk@0.2.0`。维护者在独立 SDK 项目中执行 `npm ci`、`npm test` 和 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
+SDK 已配置为可发布到 npm 的公共包；正式发布后，子应用可改用 `npm install @mira/app-sdk@0.3.0`。维护者在独立 SDK 项目中执行 `npm ci`、`npm test` 和 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
 
 SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。旧 Workbench 包需要随新 SDK 重新构建，不能继续调用被移除的接口。
 
@@ -35,7 +35,8 @@ SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。�
 | `files:app` | `files.selectDirectory/directories/revoke` | 原生目录选择器、绑定当前子应用的持久化句柄、只读/读写及撤销校验 |
 | `views:create` | `views.control`、`views.subscribe` | 隔离原生视图、父子归属、布局裁剪、消息运输与关闭 |
 | `appearance:read` | `appearance.get/subscribe` | 主题读取与订阅 |
-| `models:generate` | `models.generate` | 模型调用，供应商密钥不离开 Mira |
+| `models:generate` | `models.listProviders/listModels/chat/generate` | 可用供应商/聊天模型选择与文本多轮调用，供应商密钥不离开 Mira |
+| `web:search` | `web.search`、允许联网对话的 `web_search/web_fetch` | 复用宿主多源搜索、公开网页提取和网络限制 |
 | `notifications:send` | `notifications.send` | 系统通知 |
 | `workbench:manage` | `workbench.browser`、网站旧数据导入 | 既有网站浏览兼容接口，不含小程序生命周期 |
 
@@ -50,6 +51,33 @@ await sdk.storage.transaction(operations, 'private-namespace')
 ```
 
 SQLite namespace 是当前子应用的内部标识，不是 Mira 应用 ID；不同子应用即使使用同名 namespace，也访问不同数据库。子应用自行决定如何分配 namespace 及其业务授权。撤销子应用会话会同时关闭其 namespace 数据库；用户明确清除子应用数据时，也会清除其全部 namespace 数据库。
+
+## 模型调用（API 1.3）
+
+公开类型与客户端维护在 Mira-App-SDK，宿主实现位于 `appModelService.ts`。供应商/模型列表仅返回可用的聊天项 `{ id, name }`，不暴露密钥、API 地址或完整配置。查询列表不发起生成请求。
+
+```ts
+const providers = await sdk.models.listProviders()
+const models = await sdk.models.listModels(providerId)
+const result = await sdk.models.chat({
+  providerId, modelId,
+  messages: [{ role: 'user', content: '你好' }],
+})
+```
+
+`chat` 显式指定供应商与模型，每次提交完整 `user/assistant` 文本历史，可选独立 `system`。最多 100 条消息、文本合计 100000 字符，首尾必须是用户消息。返回完整文本，输出最多为模型配置和 2048 token 的较小值，超时 60 秒；暂不支持流式、附件或任意工具注册。调用方维护历史，宿主不创建对话记录。
+
+保留 `generate({ prompt, providerId?, modelId? })`；省略模型时需要全局默认模型，未设置时返回 `MODEL_NOT_CONFIGURED`，显式选择不依赖默认模型。不可用选择返回 `MODEL_UNAVAILABLE`，远端请求失败返回 `MODEL_REQUEST_FAILED`；不透传供应商原始错误。所有方法均校验真实会话与 `models:generate`，异步回答返回前再次授权。Workbench 另行检查小程序权限，小程序不能直接获得 Mira 会话。
+
+## 联网搜索与自主联网对话（API 1.3）
+
+公开接口在 Mira-App-SDK 0.3.0 维护，宿主适配位于 `appWebService.ts`，复用现有 `createWebSearchTool/createWebFetchTool` 与 `electronWebRequest`，不另外实现搜索引擎。SDK 搜索和联网对话共享服务实例内冷却状态；与主对话 Agent 的引用和冷却状态分开。
+
+`web.search({ query, limit?, engine? })` 需要独立 `web:search`，无须模型配置。默认 `engine: auto`，宿主并发回退搜索源；可选 engine 用于定向/诊断。query 最长 2000 字符，limit 默认 5、整数 1–10；25 秒总搜索预算，SDK 等待至少 35 秒。返回查询词、命中源、标题/URL/摘要、尝试状态/耗时，不返回原始错误或 Agent 来源编号。全部搜索失败返回 `WEB_SEARCH_FAILED`。
+
+`models.chat({ providerId, modelId, messages, webSearch: true })` 同时需要模型与搜索权限，让 AI 自主搜索、读取公开网页并综合回答，正常用户不选择搜索源。模型可发起并行调用，宿主每批最多并发 3 项，总计最多 8 次工具执行、6 次模型调用、60 秒总预算。返回完整回答和 `sources: { index, title, url }[]`，与回答中的 `[[source:N]]` 对应；每次请求单独编号。仅提供搜索和读取工具，不开放任意工具。省略联网开关保持普通模型调用。
+
+模型、工具及网络步骤开始前和最终回答交付前检查真实宿主权限；Workbench 另行检查小程序权限。撤权会阻止后续步骤和结果交付，已发起请求可能继续执行。工具失败返回安全提示给模型，不透传原始上游异常。网页/摘要是外部资料，不能当作指令或已核验正文；发现的链接不一定都已读取。
 
 ## 隔离视图与消息
 

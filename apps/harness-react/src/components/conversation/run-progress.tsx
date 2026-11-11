@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, CircleAlert, Ellipsis, FilePlus2, FileText, FolderOpen, Globe2, LoaderCircle, Monitor, Pencil, Search, Square, TerminalSquare, Wrench } from 'lucide-react'
+import { ArrowUpRight, Bot, Check, ChevronRight, CircleAlert, FilePlus2, FileText, FolderOpen, Globe2, LoaderCircle, Monitor, Pencil, Search, Square, TerminalSquare, Wrench } from 'lucide-react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HarnessRunActivity, HarnessRunSummary, HarnessSubtask, ToolCallRecord } from '../../../../../src/config/harness'
@@ -57,7 +57,7 @@ export function RunProgressCard({ run, running, waiting = false, tools = [], sum
       </div>
       {visibleTools.length > 0 && <div className="mira-tool-records" aria-label="正在执行的工具">{visibleTools.map(tool => <ToolRecord key={tool.id} tool={tool} onOpenFile={onOpenFile} onOpenCommand={onOpenCommand} />)}</div>}
       {hasBody && <details className="mt-1.5">
-        <summary className="cursor-pointer list-none select-none text-ui-xs hover:text-foreground">查看过程</summary>
+        <summary className="inline-flex cursor-pointer list-none select-none items-center gap-1.5 text-ui-xs hover:text-foreground">查看过程<ChevronRight size={13} className="mira-run-chevron" aria-hidden="true" /></summary>
         <RunBody planSteps={planSteps} toolActivities={toolActivities} subtasks={subtasks} tools={[]} usage={usage} onStopSubtask={onStopSubtask} onOpenSubtask={onOpenSubtask} />
       </details>}
       {onOpenProgress && <button type="button" className="mira-run-open" onClick={onOpenProgress}>查看调用轨迹<ArrowUpRight size={12} aria-hidden="true" /></button>}
@@ -69,7 +69,7 @@ export function RunProgressCard({ run, running, waiting = false, tools = [], sum
       {state === 'completed' ? <Check size={13} className="text-emerald-400" /> : state === 'stopped' ? <Square size={13} className="text-foreground-subtlest" /> : <CircleAlert size={13} className={state === 'failed' ? 'text-red-400' : 'text-foreground-subtlest'} />}
       <span>{state === 'failed' ? '运行失败' : state === 'stopped' ? '已停止' : state === 'partial' ? '部分操作未完成' : '已完成'}{totalOps > 0 ? ` ${completedCount}/${totalOps} 项操作` : ''}{run.durationMs > 0 ? ` · ${formatDuration(run.durationMs)}` : ''}</span>
       {failedCount > 0 && <em className="text-xs not-italic text-red-400">{failedCount} 项异常</em>}
-      <ChevronDown size={13} className="transition-transform [[open]>&]:rotate-180" />
+      <ChevronRight size={13} className="mira-run-chevron" aria-hidden="true" />
     </summary>
     {run.error && <p className="mt-1.5 text-red-400" role="alert">{run.error}</p>}
     {hasBody && <RunBody planSteps={planSteps} toolActivities={toolActivities} subtasks={subtasks} tools={visibleTools} usage={usage} onStopSubtask={onStopSubtask} onOpenFile={onOpenFile} onOpenCommand={onOpenCommand} onOpenSubtask={onOpenSubtask} />}
@@ -104,6 +104,7 @@ function RunBody({ planSteps, toolActivities, subtasks, tools, usage, onStopSubt
         <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(subtask.status === 'completed' ? 'completed' : subtask.status === 'failed' ? 'failed' : subtask.status === 'running' || subtask.status === 'queued' ? 'running' : 'idle'))} />
         <strong className="font-medium text-foreground">{ROLE_LABELS[subtask.role]} · {SUBTASK_STATUS[subtask.status] || subtask.status}</strong>
         <small className="min-w-0 truncate text-foreground-subtle">{subtask.task}</small>
+        <ChevronRight size={13} className="mira-run-chevron shrink-0" aria-hidden="true" />
         {(subtask.status === 'running' || subtask.status === 'queued') && onStopSubtask && <button type="button" aria-label="停止子任务" title="停止子任务" className="ml-auto flex size-5 items-center justify-center rounded border border-border bg-card text-foreground-subtle hover:border-red-400 hover:text-red-400" onClick={event => { event.preventDefault(); event.stopPropagation(); void onStopSubtask(subtask.id) }}><Square size={11} /></button>}
       </summary>
       <div className="ml-3.5 mt-1.5 grid gap-1.5">
@@ -182,7 +183,7 @@ export function ToolRecord({ tool, onOpenFile, onOpenCommand, hideIcon = false }
       {changes && <span className="mira-tool-change-count" aria-label={`记录变更新增 ${changes.added} 行，删除 ${changes.removed} 行`}><b>+{changes.added}</b><b>−{changes.removed}</b></span>}
       {status !== 'ok' && !((lightweight || tool.tool === 'bash') && status === 'running') && <small>{status === 'failed' && commandError ? <MiraToolFailure key={JSON.stringify([tool.id, commandError])} error={commandError} /> : status === 'cancelled' && tool.commandJob ? '已停止' : label}</small>}
       {tool.tool === 'bash' && tool.runId && onOpenCommand && <button type="button" className="mira-tool-record-action" aria-label="在右侧查看命令输出" title="在右侧查看命令输出" onClick={event => { event.stopPropagation(); onOpenCommand(tool.runId!, tool.id) }}><ArrowUpRight size={14} aria-hidden="true" /></button>}
-      {lightweight ? <Collapsible.Trigger asChild><button type="button" className="mira-tool-record-action" data-tool-record-toggle aria-label={`${expanded ? '收起' : '查看'}${toolLabel}调用记录`} title="查看调用记录"><Ellipsis size={14} aria-hidden="true" /></button></Collapsible.Trigger> : <ChevronRight size={16} className="mira-tool-chevron" aria-hidden="true" />}
+      {lightweight ? <Collapsible.Trigger asChild><button type="button" className="mira-tool-record-action" data-tool-record-toggle aria-label={`${expanded ? '收起' : '查看'}${toolLabel}调用记录`} title={`${expanded ? '收起' : '查看'}调用记录`}><ChevronRight size={14} className="mira-tool-chevron" aria-hidden="true" /></button></Collapsible.Trigger> : <ChevronRight size={16} className="mira-tool-chevron" aria-hidden="true" />}
     </div>
   return <Collapsible.Root className="mira-tool-record" open={expanded} onOpenChange={setExpanded} data-tool-call-id={tool.id} data-tool-status={status}>
     {lightweight ? summary : <Collapsible.Trigger asChild>{summary}</Collapsible.Trigger>}

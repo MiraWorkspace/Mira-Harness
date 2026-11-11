@@ -7,7 +7,7 @@ const { netRequest } = vi.hoisted(() => ({ netRequest: vi.fn() }))
 vi.mock('electron', () => ({ net: { request: netRequest } }))
 
 function setup() {
-  const request = Object.assign(new EventEmitter(), { end: vi.fn(), abort: vi.fn() })
+  const request = Object.assign(new EventEmitter(), { end: vi.fn(), abort: vi.fn(), write: vi.fn() })
   request.abort.mockImplementation(() => { request.emit('abort'); request.emit('close') })
   netRequest.mockReturnValue(request)
   return request
@@ -16,6 +16,16 @@ function setup() {
 afterEach(() => vi.clearAllMocks())
 
 describe('Electron web transport', () => {
+  it('sends the method and JSON body for anonymous search APIs', async () => {
+    const request = setup()
+    const body = JSON.stringify({ query: 'Mira' })
+    const pending = electronWebRequest('https://example.com/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    request.emit('response', Object.assign(new PassThrough(), { statusCode: 200, headers: {} }))
+    await pending
+    expect(netRequest).toHaveBeenCalledWith(expect.objectContaining({ method: 'POST' }))
+    expect(request.write).toHaveBeenCalledWith(body)
+    expect(request.write.mock.invocationCallOrder[0]).toBeLessThan(request.end.mock.invocationCallOrder[0]!)
+  })
   it('returns manual redirects for URL checks without following them in Chromium', async () => {
     const request = setup()
     const pending = electronWebRequest('https://example.com/', { headers: { Accept: 'text/html' } })
@@ -49,6 +59,19 @@ describe('Electron web transport', () => {
     expect(request.abort).toHaveBeenCalledOnce()
     await expect(electronWebRequest('https://example.com/', { signal: controller.signal })).rejects.toThrow('用户停止')
     expect(netRequest).toHaveBeenCalledOnce()
+  })
+
+  it('keeps cancellation attached when Chromium closes the upload before the response', async () => {
+    const request = setup(), controller = new AbortController()
+    const pending = electronWebRequest('https://example.com/', { signal: controller.signal })
+    request.emit('close')
+    const message = Object.assign(new PassThrough(), { statusCode: 200, headers: {} })
+    request.emit('response', message)
+    const response = await pending
+    const reading = expect(response.text()).rejects.toThrow('用户停止')
+    controller.abort(new Error('用户停止'))
+    await reading
+    expect(request.abort).toHaveBeenCalledOnce()
   })
 
   it('preserves Chromium connection errors and incomplete response failures', async () => {

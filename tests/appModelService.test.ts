@@ -5,13 +5,44 @@ import { createServer } from 'node:http'
 function fixture() {
   const model = { id: 'model', enabled: true, reasoning: false, contextWindow: 8000, maxTokens: 4000 }
   const provider = { id: 'provider', providerKey: 'custom' as const, name: 'Provider', endpoint: 'https://example.test', authMode: 'api-key' as const, models: [model], enabled: true, hasApiKey: true, createdAt: 1, updatedAt: 1 }
-  const store = { get: vi.fn(() => provider), getSecret: vi.fn(() => 'secret-key'), bindings: vi.fn(() => ({ agentDefault: { providerId: 'provider', modelId: 'model' } })) }
+  const store = { list: vi.fn(() => [provider]), get: vi.fn(() => provider), getSecret: vi.fn(() => 'secret-key'), bindings: vi.fn(() => ({ agentDefault: { providerId: 'provider', modelId: 'model' } })) }
   const completeSimple = vi.fn(async () => ({ stopReason: 'stop', content: [{ type: 'text', text: 'hello secret-key' }, { type: 'thinking', thinking: 'private' }] }))
   const factory = vi.fn(() => ({ model: {}, models: { completeSimple } }))
   return { service: new AppModelService(store as never, factory as never), store, provider, model, completeSimple, factory }
 }
 
 describe('application model service', () => {
+  it('exposes only available chat provider/model names and IDs without credentials or endpoint', () => {
+    const { service, store, provider, model } = fixture()
+    provider.models.push({ ...model, id: 'disabled', enabled: false }, { ...model, id: 'image', modelType: 'image' } as never)
+    expect(service.listProviders()).toEqual([{ id: 'provider', name: 'Provider' }])
+    expect(service.listModels('provider')).toEqual([{ id: 'model', name: 'model' }])
+    expect(store.getSecret).not.toHaveBeenCalled()
+    provider.enabled = false
+    expect(service.listProviders()).toEqual([])
+    expect(() => service.listModels('provider')).toThrow('供应商不可用')
+  })
+
+  it('supports explicit multi-turn chat with no global default and keeps prior assistant text', async () => {
+    const { service, store, completeSimple } = fixture()
+    store.bindings.mockReturnValue({} as never)
+    await expect(service.generate({ appId: 'sample', prompt: 'hello' })).rejects.toMatchObject({ code: 'MODEL_NOT_CONFIGURED' })
+    const messages = [{ role: 'user' as const, content: 'My name is Mira' }, { role: 'assistant' as const, content: 'Hello Mira' }, { role: 'user' as const, content: 'What is my name?' }]
+    expect(await service.chat({ appId: 'sample', providerId: 'provider', modelId: 'model', system: 'Be concise', messages })).toEqual({ text: 'hello [REDACTED]' })
+    expect(completeSimple.mock.calls[0][1]).toMatchObject({ systemPrompt: 'Be concise', messages: [
+      { role: 'user', content: 'My name is Mira' }, { role: 'assistant', content: [{ type: 'text', text: 'Hello Mira' }] }, { role: 'user', content: 'What is my name?' },
+    ] })
+  })
+
+  it('rejects malformed and oversized chat before any provider call', async () => {
+    const { service, factory } = fixture()
+    const base = { appId: 'sample', providerId: 'provider', modelId: 'model' }
+    for (const messages of [[], [{ role: 'system', content: 'bad' }], [{ role: 'user', content: '' }], [{ role: 'user', content: 'x'.repeat(100001) }], Array.from({ length: 101 }, () => ({ role: 'user', content: 'x' }))]) {
+      await expect(service.chat({ ...base, messages } as never)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
+    }
+    expect(factory).not.toHaveBeenCalled()
+  })
+
   it('calls a real OpenAI-compatible endpoint through the model adapter without exposing credentials', async () => {
     let authorization = '', body: any
     const server = createServer(async (request, response) => {
@@ -32,6 +63,8 @@ describe('application model service', () => {
       expect(body.model).toBe('model')
       expect(body.messages).toEqual([{ role: 'user', content: 'hello' }])
       expect(result).toEqual({ text: 'reply [REDACTED]' })
+      await new AppModelService(store as never).chat({ appId: 'sample', providerId: 'provider', modelId: 'model', system: 'Concise', messages: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'reply' }, { role: 'user', content: 'continue' }] })
+      expect(body.messages).toEqual([{ role: 'system', content: 'Concise' }, { role: 'user', content: 'hello' }, { role: 'assistant', content: 'reply' }, { role: 'user', content: 'continue' }])
     } finally { await new Promise<void>(resolve => server.close(() => resolve())) }
   })
 
@@ -55,6 +88,6 @@ describe('application model service', () => {
   it('does not leak provider errors or credentials', async () => {
     const { service, completeSimple } = fixture()
     completeSimple.mockRejectedValueOnce(new Error('secret-key provider details'))
-    await expect(service.generate({ appId: 'sample', prompt: 'hello' })).rejects.toThrow('模型请求失败，请检查模型配置后重试')
+    await expect(service.generate({ appId: 'sample', prompt: 'hello' })).rejects.toMatchObject({ code: 'MODEL_REQUEST_FAILED', message: '模型请求失败，请检查所选供应商的连接、凭据或额度后重试' })
   })
 })

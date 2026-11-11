@@ -4,7 +4,7 @@ import { BrowserWindow, screen, type WebContents, type WebContentsView } from 'e
 type BrowserAction = 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'navigate'
 type DetachedAction = 'pin' | 'reattach' | 'minimize' | 'maximize' | 'close' | BrowserAction | { type: 'navigate'; url: string }
 type BrowserState = { url: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string; faviconUrl?: string | null }
-type DetachedOptions = { owner: BrowserWindow; view: WebContentsView; title: string; presentation?: unknown; kind?: 'website' | 'miniapp'; preloadPath?: string; dragOffset?: number; dragSource?: WebContents; browserCommand?: (action: BrowserAction, url?: string) => void | Promise<void>; onReattach: () => void }
+type DetachedOptions = { owner: BrowserWindow; view: WebContentsView; title: string; presentation?: unknown; kind?: 'website' | 'miniapp'; preloadPath?: string; dragOffset?: number; dragSource?: WebContents; browserCommand?: (action: BrowserAction, url?: string) => void | Promise<void>; onReattach: () => void; onClose: () => void }
 
 const windows = new Map<number, DetachedViewWindow>()
 
@@ -98,7 +98,7 @@ function page(title: string, icon: string, kind: 'website' | 'miniapp') {
 
 export class DetachedViewWindow {
   private readonly window: BrowserWindow
-  private reattaching = false
+  private released = false
   private pinned = false
   private browserState?: BrowserState
   private icon: string
@@ -136,11 +136,11 @@ export class DetachedViewWindow {
     this.window.on('enter-full-screen', () => { this.sendState(); this.layout() })
     this.window.on('leave-full-screen', () => { this.sendState(); this.layout() })
     this.window.on('close', () => {
-      if (this.reattaching) return
-      this.reattaching = true
+      if (this.released) return
+      this.released = true
+      this.endDrag(false)
       this.window.contentView.removeChildView(options.view)
-      if (!options.owner.isDestroyed()) options.owner.contentView.addChildView(options.view)
-      options.onReattach()
+      options.onClose()
     })
     const windowId = this.window.webContents.id
     const ownerClosed = () => { if (!this.window.isDestroyed()) this.window.close() }
@@ -238,16 +238,16 @@ export class DetachedViewWindow {
   }
 
   dispose() {
-    if (this.window.isDestroyed()) return
-    this.reattaching = true
+    if (this.released || this.window.isDestroyed()) return
+    this.released = true
     this.endDrag(false)
     this.window.contentView.removeChildView(this.options.view)
     this.window.close()
   }
 
   reattach() {
-    if (this.reattaching || this.window.isDestroyed()) return
-    this.reattaching = true
+    if (this.released || this.window.isDestroyed()) return
+    this.released = true
     this.endDrag(false)
     this.window.contentView.removeChildView(this.options.view)
     if (!this.options.owner.isDestroyed()) this.options.owner.contentView.addChildView(this.options.view)

@@ -1,9 +1,14 @@
 import type { AppRuntime } from './appRuntime'
 import type { AppDataOperation, AppMigration } from '../storage/appDatabase'
+import type { ChatRequest, ChatModel, ModelProvider, ModelResult, WebSearchRequest, WebSearchResult } from '@mira/app-sdk'
 
 interface AppSdkServices {
   getTheme(): 'light' | 'dark'
   generate(input: { appId: string; prompt: string; providerId?: string; modelId?: string }): Promise<{ text: string }>
+  listProviders?(): ModelProvider[]
+  listModels?(providerId: string): ChatModel[]
+  chat?(input: ChatRequest & { appId: string }, authorizeWeb?: () => void): Promise<ModelResult>
+  search?(input: WebSearchRequest): Promise<WebSearchResult>
   notify(input: { appId: string; title: string; body?: string }): Promise<void>
   readLegacyWorkbenchSites?(appId: string): Promise<string | null>
   workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void | Promise<void>
@@ -33,7 +38,7 @@ export class AppSdkDispatcher {
     if (typeof method !== 'string' || method.length > 128) throw new Error('请求方法无效')
     if (method === 'context.get') {
       const context = this.runtime.authorize(sessionId, ownerId)
-      return { ...context, apiVersion: { major: 1, minor: 2 } }
+      return { ...context, apiVersion: { major: 1, minor: 3 } }
     }
     if (method === 'storage.migrate') return this.runtime.migrate(sessionId, ownerId, record(params).migrations as AppMigration[], record(params).namespace as string | undefined)
     if (method === 'storage.transaction') return this.runtime.transaction(sessionId, ownerId, record(params).operations as AppDataOperation[], record(params).namespace as string | undefined)
@@ -77,6 +82,32 @@ export class AppSdkDispatcher {
     if (method === 'appearance.get') {
       this.runtime.authorize(sessionId, ownerId, 'appearance:read')
       return this.services.getTheme()
+    }
+    if (method === 'web.search') {
+      this.runtime.authorize(sessionId, ownerId, 'web:search')
+      const input = record(params)
+      if (!this.services.search) throw new Error('不支持的应用方法')
+      const result = await this.services.search({ query: text(input.query, 2000)!, limit: input.limit as number | undefined, engine: input.engine as WebSearchRequest['engine'] })
+      this.runtime.authorize(sessionId, ownerId, 'web:search')
+      return result
+    }
+    if (method === 'models.listProviders' || method === 'models.listModels') {
+      this.runtime.authorize(sessionId, ownerId, 'models:generate')
+      if (method === 'models.listProviders' && this.services.listProviders) return this.services.listProviders()
+      if (method === 'models.listModels' && this.services.listModels) return this.services.listModels(text(record(params).providerId, 128)!)
+      throw new Error('不支持的应用方法')
+    }
+    if (method === 'models.chat') {
+      const input = record(params)
+      const appId = this.runtime.authorize(sessionId, ownerId, 'models:generate').appId
+      if (!this.services.chat) throw new Error('不支持的应用方法')
+      if (input.webSearch !== undefined && typeof input.webSearch !== 'boolean') throw new Error('请求参数无效')
+      const authorizeWeb = () => { this.runtime.authorize(sessionId, ownerId, 'models:generate'); this.runtime.authorize(sessionId, ownerId, 'web:search') }
+      if (input.webSearch) authorizeWeb()
+      const result = await this.services.chat({ appId, providerId: text(input.providerId, 128)!, modelId: text(input.modelId, 256)!, messages: input.messages as ChatRequest['messages'], system: text(input.system, 100000, true), ...(input.webSearch !== undefined ? { webSearch: input.webSearch } : {}) }, authorizeWeb)
+      this.runtime.authorize(sessionId, ownerId, 'models:generate')
+      if (input.webSearch) authorizeWeb()
+      return result
     }
     if (method === 'models.generate') {
       const input = record(params)

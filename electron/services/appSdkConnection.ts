@@ -1,5 +1,7 @@
 import type { AppSdkDispatcher } from './appSdkDispatcher'
 import type { AppRuntime } from './appRuntime'
+import { AppModelError } from './appModelError'
+import { AppWebError } from './appWebService'
 
 export interface AppPort {
   postMessage(message: unknown): void
@@ -10,6 +12,7 @@ export interface AppPort {
 }
 
 function publicError(error: unknown) {
+  if (error instanceof AppModelError || error instanceof AppWebError) return { code: error.code, message: error.message }
   const message = error instanceof Error ? error.message : ''
   if (message.includes('授权') || message === '应用没有所需权限') return { code: 'CAPABILITY_DENIED', message: '应用授权无效或已撤销' }
   if (message === '不支持的应用方法') return { code: 'UNKNOWN_METHOD', message }

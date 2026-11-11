@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { ArrowDown, ChevronDown, FileText, LoaderCircle, Square, Users } from 'lucide-react'
+import { ArrowDown, ChevronRight, FileText, LoaderCircle, Square, Users } from 'lucide-react'
 import type { HarnessMessage, HarnessRunActivity, HarnessSession, HarnessSubtask, ToolCallRecord } from '../../../../../src/config/harness'
 import { selectMiraSubtask } from '../../lib/subtask-activity'
 import { isWorkspaceRelativePath } from '../../state/workspace-state'
@@ -65,7 +65,7 @@ function MiraSubtaskConversation({ subtask, tools, owner, runId, active, stoppin
     <div className="mira-subtask-conversation-body" style={{ '--mira-child-summary-height': `${summaryHeight}px` } as CSSProperties}>
       <div className="mira-subtask-summary-layer">
         <details ref={summaryRef} className="mira-subtask-summary" open={summaryOpen} onToggle={event => setSummaryOpen(event.currentTarget.open)}>
-          <summary aria-label={summaryOpen ? '收起智能体摘要' : '展开智能体摘要'}><span className="mira-subtask-status-dot" data-status={subtask.status} /><strong>{summaryLabel}</strong>{running && <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />}<ChevronDown size={13} aria-hidden="true" /></summary>
+          <summary aria-label={summaryOpen ? '收起智能体摘要' : '展开智能体摘要'}><span className="mira-subtask-status-dot" data-status={subtask.status} /><strong>{summaryLabel}</strong>{running && <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />}<ChevronRight size={13} aria-hidden="true" /></summary>
           {summaryOpen && <div className="mira-subtask-summary-content">
             {subtask.agentPluginId && <dl className="mira-subtask-metadata"><div><dt>来源插件</dt><dd>{subtask.agentPluginId}</dd></div><div><dt>执行角色</dt><dd>{miraSubtaskRoleLabels[subtask.role]}</dd></div></dl>}
             {subtask.agentScope && <dl className="mira-subtask-metadata"><div><dt>智能体来源</dt><dd>{subtask.agentScope === 'project' ? '当前项目' : '全局'}</dd></div><div><dt>执行角色</dt><dd>{miraSubtaskRoleLabels[subtask.role]}</dd></div></dl>}

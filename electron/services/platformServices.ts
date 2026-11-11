@@ -28,6 +28,7 @@ import { MiraWorkspaceHtml } from './miraWorkspaceHtml'
 import { MiraWorkspaceMedia } from './miraWorkspaceMedia'
 import { AppRuntime } from './appRuntime'
 import { AppModelService } from './appModelService'
+import { AppWebService } from './appWebService'
 import { AppNotificationService } from './appNotificationService'
 import { AppSdkDispatcher } from './appSdkDispatcher'
 import { AppViewManager } from './appViewManager'
@@ -108,12 +109,15 @@ export async function createPlatformServices({ miraPaths, publishHarnessEvent }:
   const appFiles = new AppFiles(join(miraPaths.root, 'app-data'))
   const legacyMiniapps = new LegacyWorkbenchMiniapps(miraPaths.apps, join(miraPaths.root, 'app-data'))
   const appTheme = () => resolveAppTheme(database.getSnapshot().preferences.themeMode, nativeTheme.shouldUseDarkColors)
-  const appModels = new AppModelService(database.models)
+  const appWeb = new AppWebService(electronWebRequest)
+  const appModels = new AppModelService(database.models, undefined, appWeb)
   const appNotifications = new AppNotificationService(id => apps.resolvePlatformApp(id) ? apps.state().installed.find(item => item.id === id)?.name : undefined)
   const legacyPort = typeof preferences.workbenchLegacyPort === 'number' ? preferences.workbenchLegacyPort : typeof preferences.localMicroAppPort === 'number' ? preferences.localMicroAppPort : undefined
   let appViews: AppViewManager
   const appDispatcher = new AppSdkDispatcher(appRuntime, {
     getTheme: appTheme, generate: input => appModels.generate(input), notify: input => appNotifications.notify(input),
+    listProviders: () => appModels.listProviders(), listModels: id => appModels.listModels(id), chat: (input, authorize) => appModels.chat(input, authorize),
+    search: input => appWeb.search(input),
     readLegacyWorkbenchSites: id => legacyDataCleared(database.getSnapshot().preferences, id) ? Promise.resolve(null) : readWorkbenchLegacySites(id, localMicroAppServer.port, legacyPort),
     workbenchBrowser: (ownerId, input) => appViews.workbenchBrowser(ownerId, input),
     workbenchSiteIcon: url => fetchWorkbenchSiteIcon(url, (input, init) => net.fetch(input, init)),

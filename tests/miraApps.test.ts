@@ -398,6 +398,8 @@ describe('official application installation and uninstallation', () => {
     expect(updated?.platformApp).toBe(true)
     expect(f.apps.resolvePlatformApp(manifest.id)?.requiredCapabilities).toEqual([])
     writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 3 } }))
+    expect(f.apps.scan().installed[0].error).toBeUndefined()
+    writeFileSync(join(f.directory, 'app-manifest.json'), JSON.stringify({ ...manifest, runtime: 'platform', platformApi: { major: 1, minor: 4 } }))
     expect(f.apps.scan().installed[0].error).toContain('不支持')
   })
 
