@@ -44,7 +44,9 @@ export interface MiraNetworkSnapshot {
 }
 export interface MiraResourceBridge {
   isWindows: boolean
-  windowCommand(action: 'state' | 'minimize' | 'maximize' | 'close'): Promise<boolean>
+  isMac: boolean
+  windowCommand(action: 'state' | 'fullscreen-state' | 'minimize' | 'maximize' | 'close'): Promise<boolean>
+  onFullscreen(callback: (fullscreen: boolean) => void): () => void
   onMaximized(callback: (maximized: boolean) => void): () => void
   getSnapshot(): Promise<MiraResourceSnapshot>
   storage: { scan(): Promise<MiraStorageSnapshot>; cancel(): Promise<void>; reveal(path: string): Promise<void>; clean(id: string): Promise<boolean> }

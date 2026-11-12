@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
     once(event: string, callback: Function) { this.callbacks[event] = callback }
     isDestroyed() { return this.destroyed }
     isMinimized() { return true }
-    isMaximized = vi.fn(() => false); minimize = vi.fn(); maximize = vi.fn(); unmaximize = vi.fn(); close = vi.fn()
+    isMaximized = vi.fn(() => false); isFullScreen = vi.fn(() => false); minimize = vi.fn(); maximize = vi.fn(); unmaximize = vi.fn(); close = vi.fn()
     restore = vi.fn(); show = vi.fn(); focus = vi.fn(); loadFile = vi.fn(); loadURL = vi.fn(); setMenu = vi.fn()
   },
 }))
@@ -31,11 +31,29 @@ it.each(['win32', 'darwin', 'linux'])('configures the title bar on %s', async pl
     if (platform === 'win32') {
       expect(window.options).toMatchObject({ frame: false, titleBarStyle: 'hidden', autoHideMenuBar: true })
       expect(window.setMenu).toHaveBeenCalledWith(null)
+    } else if (platform === 'darwin') {
+      expect(window.options).toMatchObject({ titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 17 } })
+      expect(window.options.frame).not.toBe(false)
+      expect(window.setMenu).not.toHaveBeenCalled()
     } else {
       expect(window.options.titleBarStyle).toBeUndefined()
       expect(window.setMenu).not.toHaveBeenCalled()
     }
   } finally { vi.unstubAllGlobals() }
+})
+it('reports the resource window fullscreen state and forwards transitions', async () => {
+  const service = await import('../electron/bootstrap/resourceManager')
+  service.openResourceManager()
+  const window = state.windows[0]
+  expect(service.resourceWindowCommand(101, 'fullscreen-state')).toBe(false)
+  window.isFullScreen.mockReturnValue(true)
+  expect(service.resourceWindowCommand(101, 'fullscreen-state')).toBe(true)
+  window.callbacks['enter-full-screen']()
+  window.callbacks['leave-full-screen']()
+  expect(window.webContents.send.mock.calls).toEqual([
+    ['window:resource-fullscreen', true], ['window:resource-fullscreen', false],
+  ])
+  expect(() => service.resourceWindowCommand(999, 'fullscreen-state')).toThrow()
 })
 it('limits resource window commands to the resource window', async () => {
   const service = await import('../electron/bootstrap/resourceManager')

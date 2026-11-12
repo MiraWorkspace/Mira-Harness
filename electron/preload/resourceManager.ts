@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('resourceManager', {
   isWindows: process.platform === 'win32',
-  windowCommand: (action: 'state' | 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('window:resource-command', action),
+  isMac: process.platform === 'darwin',
+  windowCommand: (action: 'state' | 'fullscreen-state' | 'minimize' | 'maximize' | 'close') => ipcRenderer.invoke('window:resource-command', action),
+  onFullscreen: (callback: (fullscreen: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, fullscreen: boolean) => callback(fullscreen)
+    ipcRenderer.on('window:resource-fullscreen', listener)
+    return () => ipcRenderer.removeListener('window:resource-fullscreen', listener)
+  },
   onMaximized: (callback: (maximized: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
     ipcRenderer.on('window:resource-maximized', listener)

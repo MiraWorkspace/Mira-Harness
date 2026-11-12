@@ -1,6 +1,6 @@
 <template>
   <main class="resource-manager" data-testid="resource-manager">
-    <header class="resource-header" :class="{ 'resource-header--windows': bridge.isWindows }">
+    <header class="resource-header" :class="{ 'resource-header--windows': bridge.isWindows, 'resource-header--macos': bridge.isMac, 'resource-header--fullscreen': fullscreen }">
       <div class="resource-heading"><h1>资源管理器</h1><div v-if="usageActive" class="subtle tiny">{{ snapshot ? `${snapshot.processes.length} 个进程 · ${snapshot.plugins?.length ?? 0} 个插件` : '正在读取资源占用...' }}</div></div>
       <div role="tablist" aria-label="资源类型" class="resource-tabs">
         <button v-for="item in tabs" :id="`tab-${item.id}`" :key="item.id" role="tab" :aria-selected="tab === item.id" :tabindex="tab === item.id ? 0 : -1" aria-controls="resource-content" @click="tab = item.id" @keydown="moveTab($event, item.id)">{{ item.label }}</button>
@@ -64,9 +64,12 @@ import NetworkSection from './NetworkSection.vue'
 import './resource-manager.css'
 const bridge = (window as unknown as { resourceManager: MiraResourceBridge }).resourceManager
 const maximized = ref(false)
+const fullscreen = ref(false)
+const stopFullscreen = bridge.isMac ? bridge.onFullscreen(value => { fullscreen.value = value }) : undefined
+if (bridge.isMac) void bridge.windowCommand('fullscreen-state').then(value => { fullscreen.value = value })
 const stopMaximized = bridge.isWindows ? bridge.onMaximized(value => { maximized.value = value }) : undefined
 if (bridge.isWindows) void bridge.windowCommand('state').then(value => { maximized.value = value })
-onUnmounted(() => stopMaximized?.())
+onUnmounted(() => { stopMaximized?.(); stopFullscreen?.() })
 const tabs = [{ id: 'cpu', label: 'CPU' }, { id: 'memory', label: '内存' }, { id: 'storage', label: '存储' }, { id: 'network', label: '网络' }] as const
 type Tab = typeof tabs[number]['id']
 const tab = ref<Tab>('cpu')
