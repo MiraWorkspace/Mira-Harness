@@ -13,6 +13,7 @@ interface AppSdkServices {
   readLegacyWorkbenchSites?(appId: string): Promise<string | null>
   workbenchBrowser?(ownerId: number, input: Record<string, unknown>): void | Promise<void>
   workbenchSiteIcon?(url: string): Promise<string | null>
+  workbenchMiniappResource?(url: string, kind: 'manifest' | 'package'): Promise<Uint8Array>
   files?(appId: string, ownerId: number, method: string, input: Record<string, unknown>, authorize: () => void): Promise<unknown> | unknown
   views?(appId: string, ownerId: number, input: Record<string, unknown>): unknown
   legacyMiniapps?(appId: string, input: Record<string, unknown>): Promise<unknown> | unknown
@@ -38,7 +39,7 @@ export class AppSdkDispatcher {
     if (typeof method !== 'string' || method.length > 128) throw new Error('请求方法无效')
     if (method === 'context.get') {
       const context = this.runtime.authorize(sessionId, ownerId)
-      return { ...context, apiVersion: { major: 1, minor: 3 } }
+      return { ...context, apiVersion: { major: 1, minor: 4 } }
     }
     if (method === 'storage.migrate') return this.runtime.migrate(sessionId, ownerId, record(params).migrations as AppMigration[], record(params).namespace as string | undefined)
     if (method === 'storage.transaction') return this.runtime.transaction(sessionId, ownerId, record(params).operations as AppDataOperation[], record(params).namespace as string | undefined)
@@ -60,6 +61,15 @@ export class AppSdkDispatcher {
       const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
       if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchSiteIcon) throw new Error('应用没有所需权限')
       const value = await this.services.workbenchSiteIcon(text(record(params).url, 8192)!)
+      this.runtime.authorize(sessionId, ownerId, 'workbench:manage')
+      return value
+    }
+    if (method === 'workbench.fetchMiniappResource') {
+      const appId = this.runtime.authorize(sessionId, ownerId, 'workbench:manage').appId
+      if (!['mira-workbench', 'mira-workbench-test'].includes(appId) || !this.services.workbenchMiniappResource) throw new Error('应用没有所需权限')
+      const input = record(params)
+      if (input.kind !== 'manifest' && input.kind !== 'package') throw new Error('下载类型无效')
+      const value = await this.services.workbenchMiniappResource(text(input.url, 8192)!, input.kind)
       this.runtime.authorize(sessionId, ownerId, 'workbench:manage')
       return value
     }

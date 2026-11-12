@@ -82,7 +82,7 @@ describe('application SDK dispatch', () => {
 
   it('uses session identity for storage and approved capabilities', async () => {
     const { runtime, dispatcher, session, services } = fixture()
-    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 3 } })
+    expect(await dispatcher.invoke(session, 1, 'context.get')).toMatchObject({ appId: 'sample', apiVersion: { major: 1, minor: 4 } })
     await dispatcher.invoke(session, 1, 'storage.migrate', { migrations: [{ version: 1, tables: [{ name: 'items', columns: [{ name: 'id', type: 'TEXT' }] }] }] })
     await dispatcher.invoke(session, 1, 'storage.transaction', { operations: [{ type: 'insert', table: 'items', values: { id: 'saved' } }] })
     expect(await dispatcher.invoke(session, 1, 'appearance.get')).toBe('dark')
@@ -153,6 +153,26 @@ describe('application SDK dispatch', () => {
     const { runtime, dispatcher, session } = fixture()
     await expect(dispatcher.invoke(session, 1, 'workbench.install')).rejects.toThrow('不支持')
     await expect(dispatcher.invoke(session, 1, 'files.read', { path: 'test' })).rejects.toThrow('权限')
+    runtime.close()
+  })
+
+  it('restricts miniapp downloads to Workbench and discards results after revocation', async () => {
+    const { runtime, app, services, session: otherSession } = fixture()
+    const reader = vi.fn(async () => new Uint8Array([1, 2]))
+    const dispatcher = new AppSdkDispatcher(runtime, { ...services, workbenchMiniappResource: reader })
+    await expect(dispatcher.invoke(otherSession, 1, 'workbench.fetchMiniappResource', { url: 'https://example.com/manifest.json', kind: 'manifest' })).rejects.toThrow('权限')
+    app.requiredCapabilities.push('workbench:manage'); runtime.approve(app.id, app.installationId, app.requiredCapabilities)
+    await expect(dispatcher.invoke(runtime.open(app.id, 1), 1, 'workbench.fetchMiniappResource', { url: 'https://example.com/', kind: 'package' })).rejects.toThrow('权限')
+    expect(reader).not.toHaveBeenCalled()
+    app.id = 'mira-workbench'; runtime.approve(app.id, app.installationId, app.requiredCapabilities)
+    const session = runtime.open(app.id, 1)
+    await expect(dispatcher.invoke(session, 1, 'workbench.fetchMiniappResource', { url: 'https://example.com/', kind: 'other' })).rejects.toThrow('类型')
+    expect(await dispatcher.invoke(session, 1, 'workbench.fetchMiniappResource', { url: 'https://example.com/', kind: 'package' })).toEqual(new Uint8Array([1, 2]))
+    let finish!: (bytes: Uint8Array) => void
+    reader.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = dispatcher.invoke(session, 1, 'workbench.fetchMiniappResource', { url: 'https://example.com/', kind: 'manifest' })
+    runtime.revokeApproval(app.id); finish(new Uint8Array([3]))
+    await expect(pending).rejects.toThrow('授权无效')
     runtime.close()
   })
 

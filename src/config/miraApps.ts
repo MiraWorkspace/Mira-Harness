@@ -66,7 +66,7 @@ function compatibility(value: unknown) {
 }
 export function appCompatibilityError(value: AppCompatibility, shellVersion: string): string | undefined {
   if (compareAppVersions(shellVersion, value.minShellVersion) < 0) return `需要 Mira ${value.minShellVersion} 或更新版本`
-  if (value.platformApi.major !== 1 || value.platformApi.minor > 3) return '当前 Mira 不支持此应用要求的平台 API'
+  if (value.platformApi.major !== 1 || value.platformApi.minor > 4) return '当前 Mira 不支持此应用要求的平台 API'
 }
 export function parseLocalAppManifest(value: unknown): LocalAppManifest {
   const item = record(value)

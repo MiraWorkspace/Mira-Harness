@@ -1,4 +1,4 @@
-# Mira 子应用底层 SDK（API 1.3 / SDK 0.3.0）
+# Mira 子应用底层 SDK（API 1.4 / SDK 0.4.0）
 
 Mira 与 Harness 是同一个主应用。Workbench 等第一方可选安装应用称为子应用。Mira 管理这些子应用的安装、身份、隔离存储和原生视图；Workbench 是自己小程序的宿主，拥有小程序包格式、注册表、安装、运行、授权、目录读写权限、更新和卸载逻辑。
 
@@ -20,9 +20,9 @@ const sdk = await connectMiraApp()
 const context = await sdk.context.get()
 ```
 
-SDK 源码已迁至独立仓库 [Mira-App-SDK](https://github.com/MiraWorkspace/Mira-App-SDK)，不再包含于 Harness 的 `packages` 中。0.3.0 已通过 GitHub 标签 `v0.3.0` 分发，尚未发布到 npm。子应用执行 `npm install github:MiraWorkspace/Mira-App-SDK#v0.3.0`，仍从 `@mira/app-sdk` 导入；GitHub 安装会自动构建 JavaScript 与类型声明，需要开发环境提供 Node.js、npm 和 Git。Harness 的宿主集成测试通过开发依赖固定该线上标签，锁文件记录确切提交，不依赖临时本地包或相邻源码目录。
+SDK 源码已迁至独立仓库 [Mira-App-SDK](https://github.com/MiraWorkspace/Mira-App-SDK)，不再包含于 Harness 的 `packages` 中。0.4.0 已通过 GitHub 标签 `v0.4.0` 分发，尚未发布到 npm。子应用执行 `npm install github:MiraWorkspace/Mira-App-SDK#v0.4.0`，仍从 `@mira/app-sdk` 导入；GitHub 安装会自动构建 JavaScript 与类型声明，需要开发环境提供 Node.js、npm 和 Git。Harness 的宿主集成测试通过开发依赖固定该线上标签，锁文件记录确切提交，不依赖临时本地包或相邻源码目录。
 
-SDK 已配置为可发布到 npm 的公共包；正式发布后，子应用可改用 `npm install @mira/app-sdk@0.3.0`。维护者在独立 SDK 项目中执行 `npm ci`、`npm test` 和 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
+SDK 已配置为可发布到 npm 的公共包；正式发布后，子应用可改用 `npm install @mira/app-sdk@0.4.0`。维护者在独立 SDK 项目中执行 `npm ci`、`npm test` 和 `npm pack --dry-run` 检查产物，登录具有 `@mira` scope 权限的 npm 账号后执行 `npm publish`；打包与发布会自动构建，发布目标固定为 npm 官方仓库。已发布版本不能覆盖，SDK 更新需要发布新版本，并由子应用更新依赖后重新构建。
 
 SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。旧 Workbench 包需要随新 SDK 重新构建，不能继续调用被移除的接口。
 
@@ -38,7 +38,7 @@ SDK 0.2.0 移除了 `sdk.workbench.apps/install/review/uninstall/revoke/app`。�
 | `models:generate` | `models.listProviders/listModels/chat/generate` | 可用供应商/聊天模型选择与文本多轮调用，供应商密钥不离开 Mira |
 | `web:search` | `web.search`、允许联网对话的 `web_search/web_fetch` | 复用宿主多源搜索、公开网页提取和网络限制 |
 | `notifications:send` | `notifications.send` | 系统通知 |
-| `workbench:manage` | `workbench.browser`、网站旧数据导入 | 既有网站浏览兼容接口，不含小程序生命周期 |
+| `workbench:manage` | `workbench.browser`、`workbench.fetchMiniappResource`、网站旧数据导入 | 网站浏览兼容与小程序资源下载，不含小程序生命周期 |
 
 文件默认位于 `~/.mira/app-data/files/<子应用id>/`。所有路径为相对路径；拒绝路径穿越、符号链接和平台不兼容路径。写入使用临时文件后原子替换，单文件最大 64 MiB。目录授权句柄由 Mira 创建并绑定真实子应用身份；调用者不能通过提供绝对路径访问其他目录。授权句柄元数据位于文件沙箱之外，小程序无法直接改写。
 
@@ -94,6 +94,14 @@ const id = await sdk.views.control({ type: 'open', key: 'notes', directory: 'con
 `directory` 必须属于当前子应用的专属文件区，不能指定其他子应用或外部目录。Mira 不解析该目录的业务清单，也不作安装、版本或小程序权限决策。视图启用 sandbox、contextIsolation，禁用 Node、webview、弹窗、下载和系统权限请求；本地资源限制在该视图挂载的目录。会话绑定主框架，导航或销毁即失效。视图消息不会直接进入 Mira 的模型、文件或数据库分发器，而是进入创建者的 `views.request`。
 
 父子关系由 Mira 验证，其他子应用或兄弟视图不能布局、关闭或回复不属于自己的视图。父视图关闭时子视图一起关闭。`views.closed` 通知创建者清理状态。子应用可用 `event` 控制向自有内容发送的事件。系统主题不会自动授权给子视图。
+
+## Workbench 小程序下载（API 1.4）
+
+SDK 0.4.0 新增 `sdk.workbench.fetchMiniappResource(url, 'manifest' | 'package')`，返回原始 `Uint8Array`。仅批准了 `workbench:manage` 的 Workbench 正式版/测试版会话可调用，普通子应用即使声明相同权限也不可调用；完成前再次检查授权。
+
+传输由 `workbenchMiniappResource.ts` 复用 `electronWebRequest`，只接受不含凭证/片段的 HTTPS 地址，拒绝已识别的本机/内网地址，不带会话 cookie，不跟随重定向。清单上限 64 KiB、15 秒，包上限 64 MiB、60 秒；流式计数限制不依赖服务端报告的 Content-Length。
+
+Mira 不解析发布清单、不安装小程序，也不作小程序权限决策。Workbench 负责清单与包同源、大小、SHA-256、包内声明、版本、权限确认及安装回滚。小程序的 Workbench 消息通道不开放此下载方法。既有小程序模型/联网能力仍只要求 API 1.3；Workbench 在用户发起网址安装时检查 Mira API 1.4，旧宿主提示升级。
 
 ## Workbench 一次性迁移
 
