@@ -1665,5 +1665,5 @@ export const HarnessComposer = forwardRef<HarnessComposerHandle, HarnessComposer
 })
 
 function choices(state: ReturnType<PilotController['getSnapshot']>) {
-    return state.providers.flatMap(provider => isModelProviderAvailable(provider) ? provider.models.filter(model => model.enabled && Boolean(model.id.trim())).map(model => ({ providerId: provider.id, providerName: provider.name, modelId: model.id, modelName: model.name, reasoning: model.reasoning, multimodal: model.multimodal, contextWindow: model.contextWindow })) : [])
+    return state.providers.flatMap(provider => isModelProviderAvailable(provider) ? provider.models.filter(model => model.enabled && Boolean(model.id.trim())).map(model => ({ providerId: provider.id, providerKey: provider.providerKey, providerSlug: provider.slug, providerName: provider.name, providerLogo: provider.logo, modelId: model.id, modelName: model.name, reasoning: model.reasoning, multimodal: model.multimodal, contextWindow: model.contextWindow })) : [])
 }

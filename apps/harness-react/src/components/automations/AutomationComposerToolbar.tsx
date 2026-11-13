@@ -15,7 +15,7 @@ export function AutomationComposerToolbar({ form, projects, providers, permissio
   const [menu, setMenu] = useState(''), [query, setQuery] = useState('')
   const modelTrigger = useRef<HTMLButtonElement>(null)
   useEffect(() => { if (disabled) setMenu('') }, [disabled])
-  const models = providers.filter(isModelProviderAvailable).flatMap(provider => provider.models.filter(model => model.enabled && model.id.trim()).map(model => ({ providerId: provider.id, providerName: provider.name, modelId: model.id, modelName: model.name, reasoning: model.reasoning, multimodal: model.multimodal })))
+  const models = providers.filter(isModelProviderAvailable).flatMap(provider => provider.models.filter(model => model.enabled && model.id.trim()).map(model => ({ providerId: provider.id, providerKey: provider.providerKey, providerSlug: provider.slug, providerName: provider.name, providerLogo: provider.logo, modelId: model.id, modelName: model.name, reasoning: model.reasoning, multimodal: model.multimodal })))
   const selected = models.find(model => JSON.stringify([model.providerId, model.modelId]) === form.modelKey)
   const project = projects.find(project => project.id === form.projectId)
   const PermissionIcon = composerPermissionIcon(form.permissionMode)

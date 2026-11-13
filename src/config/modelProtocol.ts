@@ -22,6 +22,7 @@ const BUILTIN_PROTOCOL_BASES: Record<string, Partial<Record<ModelProtocol, strin
   tokenhub: { 'openai-completions': '/v1', 'openai-responses': '/v1', 'anthropic-messages': '/v1' },
   qianfan: { 'openai-completions': '/v2', 'openai-responses': '/v2', 'anthropic-messages': '/anthropic' },
   xiaomimimo: { 'openai-completions': '/v1', 'openai-responses': '/v1', 'anthropic-messages': '/anthropic' },
+  orcarouter: { 'openai-completions': '/v1', 'openai-responses': '/v1', 'anthropic-messages': '' },
   ollama: { 'openai-completions': '/v1', 'openai-responses': '/v1', 'anthropic-messages': '/v1' },
 }
 

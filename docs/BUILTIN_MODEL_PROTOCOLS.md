@@ -1,6 +1,6 @@
 # 内置服务商协议地址
 
-核对日期：2026-10-29。下表记录最终请求路径，API 地址输入框保存对应的基础路径。
+核对日期：2026-11-13。下表记录最终请求路径，API 地址输入框保存对应的基础路径。
 切换协议只转换已知路径，保留原主机、地区、端口及代理前缀；未知的手动路径保持原样。
 不会在载入页面时批量改写已有配置。自定义服务商不套用内置规则。
 
@@ -18,6 +18,7 @@
 | 腾讯云 TokenHub | `/v1/chat/completions` | `/v1/responses` | `/v1/messages` | [接入文档](https://cloud.tencent.com/document/product/1823/130079) |
 | 百度云千帆 | `/v2/chat/completions` | `/v2/responses` | `/anthropic/v1/messages` | [Chat](https://cloud.baidu.com/doc/qianfan-api/s/3m7of64lb)、[Responses](https://cloud.baidu.com/doc/qianfan-api/s/vmhejnuy8)、[Anthropic](https://cloud.baidu.com/doc/qianfan-docs/s/6mh3e6gjp) |
 | Xiaomi MiMo | `/v1/chat/completions` | `/v1/responses` | `/anthropic/v1/messages` | [Responses](https://mimo.mi.com/static/docs/api/chat/responses.md)、[Anthropic](https://mimo.mi.com/static/docs/api/chat/anthropic-api.md) |
+| OrcaRouter | `/v1/chat/completions` | `/v1/responses` | `/v1/messages` | [模型目录](https://www.orcarouter.ai/zh-CN/models)、[集成概览](https://docs.orcarouter.ai/integrations/overview) |
 | Ollama | `/v1/chat/completions` | `/v1/responses` | `/v1/messages` | [OpenAI 兼容](https://docs.ollama.com/api/openai-compatibility)、[Anthropic 兼容](https://docs.ollama.com/api/anthropic-compatibility) |
 
 支持协议表示服务商提供该接口，不表示其每个模型或套餐均支持：百川 Responses 为医疗模型接口；魔搭 Responses 文档当前限定 Qwen3.5 系列，Anthropic 接口为 beta；本地 Ollama 需要支持相应接口的版本。

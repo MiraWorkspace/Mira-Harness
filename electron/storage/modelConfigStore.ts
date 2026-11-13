@@ -34,6 +34,7 @@ function inferProviderKey(name: string, endpoint: string): ModelProviderKey {
   if (text.includes('minimax')) return 'minimax'
   if (text.includes('deepseek')) return 'deepseek'
   if (text.includes('qwen') || text.includes('千问') || text.includes('dashscope') || text.includes('aliyun') || text.includes('tongyi')) return 'qwen'
+  if (text.includes('orcarouter') || text.includes('orca router')) return 'orcarouter'
   if (text.includes('ollama') || text.includes('11434')) return 'ollama'
   return 'custom'
 }
@@ -180,12 +181,13 @@ export class ModelConfigStore {
     return this.readRecords().find(record => record.id === id)
   }
 
-  private asSummary(record: JsonProviderRecord): ModelProviderSummary {
+  private asSummary(record: JsonProviderRecord, logo?: string): ModelProviderSummary {
     return {
       id: record.id,
       builtin: record.builtin === true,
       providerKey: record.providerKey,
       slug: serviceId(record),
+      ...(logo ? { logo } : {}),
       name: record.name,
       endpoint: record.endpoint,
       authMode: record.authMode,
@@ -198,7 +200,10 @@ export class ModelConfigStore {
     }
   }
 
-  list(): ModelProviderSummary[] { return this.readRecords().sort((a, b) => b.updatedAt - a.updatedAt).map(record => this.asSummary(record)) }
+  list(): ModelProviderSummary[] {
+    const services = new Map((this.readDocument().services || []).map(service => [service.id, service.logo]))
+    return this.readRecords().sort((a, b) => b.updatedAt - a.updatedAt).map(record => this.asSummary(record, services.get(serviceId(record))))
+  }
 
   services(): ModelServiceSummary[] { return this.readDocument().services || [] }
 

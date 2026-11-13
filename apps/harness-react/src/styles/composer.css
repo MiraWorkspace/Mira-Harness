@@ -190,16 +190,30 @@
 .mira-model-menu__footer { flex: none; }
 .harness-composer__menu-item.mira-model-menu__provider, .harness-composer__menu-item.mira-model-menu__option { min-height: 32px; }
 .mira-model-menu__provider > span, .mira-model-menu__option strong { overflow-wrap: anywhere; }
-.mira-model-menu__option { padding-right: 32px; }
-.mira-model-menu__option > .harness-composer__check { position: absolute; right: 8px; }
-.mira-model-menu__capability { flex: none; }
+.mira-model-menu__provider > .mira-model-menu__provider-logo { display: grid; width: 18px; height: 18px; flex: 0 0 18px; place-items: center; overflow: hidden; }
+.mira-model-menu__provider-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.mira-model-menu__provider-logo--mono { background: currentColor; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+.mira-model-menu__provider-logo--fallback { border-radius: 50%; color: #fff; background: var(--color-foreground-subtle); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.mira-model-menu__provider-state, .mira-model-menu__model-state { position: relative; display: grid; width: 20px; height: 20px; flex: 0 0 20px; place-items: center; margin-left: auto; }
+.mira-model-menu__dot { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--color-success); }
+.mira-model-menu__provider-arrow { position: absolute; color: var(--color-foreground-subtle); opacity: 0; transition: opacity 120ms ease-out; }
+.mira-model-menu__provider-state:not(.mira-model-menu__provider-state--selected) .mira-model-menu__provider-arrow, .mira-model-menu__provider:hover .mira-model-menu__provider-state--selected .mira-model-menu__provider-arrow, .mira-model-menu__provider:focus-within .mira-model-menu__provider-state--selected .mira-model-menu__provider-arrow { opacity: 1; }
+.mira-model-menu__provider:hover .mira-model-menu__provider-state--selected .mira-model-menu__dot, .mira-model-menu__provider:focus-within .mira-model-menu__provider-state--selected .mira-model-menu__dot { opacity: 0; }
+.mira-model-menu__navigation > .mira-model-menu__provider-logo { display: grid; width: 18px; height: 18px; flex: 0 0 18px; place-items: center; overflow: hidden; }
+.mira-model-menu__navigation .mira-model-menu__provider-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.mira-model-menu__navigation .mira-model-menu__provider-logo--mono { background: currentColor; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+.mira-model-menu__navigation .mira-model-menu__provider-logo--fallback { border-radius: 50%; color: #fff; background: var(--color-foreground-subtle); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.mira-model-menu__option { padding-right: 8px; }
+.mira-model-menu__option > .mira-model-menu__model-state { position: relative; }
+.mira-model-menu__model-name { min-width: 0; overflow: hidden; }
+.mira-model-menu__model-name > strong { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .mira-model-menu__submenu { width: max-content; min-width: min(192px, var(--radix-dropdown-menu-content-available-width)); max-width: min(420px, var(--radix-dropdown-menu-content-available-width)); max-height: min(288px, var(--radix-dropdown-menu-content-available-height)); }
 .harness-composer__reasoning-menu { min-width: 144px; }
 .harness-composer__menu-item { position: relative; display: flex; min-height: 28px; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px; outline: 0; font-size: var(--text-ui-base); line-height: 20px; cursor: default; user-select: none; }
 .harness-composer__menu-item[data-highlighted] { color: var(--color-foreground); background: var(--color-menu-hover); }
 .harness-composer__menu-item[data-disabled] { pointer-events: none; color: var(--color-foreground-subtlest); }
 .harness-composer__menu-item > svg { flex: none; color: var(--color-foreground-subtle); }
-.harness-composer__menu-item > span:not(.harness-composer__check) { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.harness-composer__menu-item > span:not(.harness-composer__check):not(.mira-model-menu__provider-logo):not(.mira-model-menu__provider-state):not(.mira-model-menu__model-state) { display: grid; min-width: 0; flex: 1; gap: 2px; }
 .harness-composer__menu-item strong { overflow: hidden; font-size: var(--text-ui-base); font-weight: 400; text-overflow: ellipsis; }
 .harness-composer__menu-item small { color: var(--color-foreground-subtle); font-size: var(--text-ui-sm); font-weight: 400; line-height: 16px; }
 .harness-composer__mode-option { min-height: 52px; align-items: flex-start; gap: 12px; padding: 8px 32px 8px 8px; }

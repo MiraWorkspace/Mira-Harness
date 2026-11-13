@@ -198,7 +198,16 @@ describe('two-level model service tree', () => {
     const names = view.all().filter(node => String(node.props.class).includes('row--provider')).map(node => text(node.children.find(child => child.props.class === 'row__name')!))
     const added = ['硅基流动', '百川', '阿里云百炼', '火山引擎(豆包)', 'modelscope魔搭', '腾讯云TokenHub', '百度云千帆', 'Xiaomi Mimo']
     expect(names.slice(names.indexOf('Ollama') - added.length, names.indexOf('Ollama'))).toEqual(added)
-    expect(names.slice(0, 5)).toEqual(savedOrder ? ['月之暗面', '深度求索', '智谱', 'MiniMax', '阿里千问'] : ['深度求索', '智谱', '月之暗面', 'MiniMax', '阿里千问'])
+    expect(names.slice(0, 6)).toEqual(savedOrder ? ['OrcaRouter', '月之暗面', '深度求索', '智谱', 'MiniMax', '阿里千问'] : ['OrcaRouter', '深度求索', '智谱', '月之暗面', 'MiniMax', '阿里千问'])
+  })
+
+  it('selects the first available provider in sidebar order on initial load', async () => {
+    store.save({ providerKey: 'orcarouter', slug: 'orcarouter', builtin: true, name: 'OrcaRouter', endpoint: 'https://api.orcarouter.ai/v1', models: [], enabled: false })
+    await new Promise(resolve => setTimeout(resolve, 2))
+    store.save(original)
+    const view = setup(); await drain()
+    expect(view.row('OrcaRouter').props.class).toContain('is-active')
+    expect(view.row('深度求索').props.class).not.toContain('is-active')
   })
 
   it.each([
@@ -210,6 +219,7 @@ describe('two-level model service tree', () => {
     ['tokenhub', '腾讯云TokenHub', 'https://tokenhub.tencentmaas.com/v1', 'https://cloud.tencent.com/document/product/1823/130079'],
     ['qianfan', '百度云千帆', 'https://qianfan.baidubce.com/v2', 'https://cloud.baidu.com/doc/qianfan/index.html'],
     ['xiaomimimo', 'Xiaomi Mimo', 'https://api.xiaomimimo.com/v1', 'https://mimo.mi.com/docs/zh-CN/quick-start/summary/model'],
+    ['orcarouter', 'OrcaRouter', 'https://api.orcarouter.ai/v1', 'https://www.orcarouter.ai/zh-CN/models'],
   ])('opens and persists the built-in %s with its verified endpoint and documentation', async (providerKey, name, endpoint, docs) => {
     const view = setup(); await drain()
     await view.click(view.row(name))
@@ -364,6 +374,51 @@ describe('two-level model service tree', () => {
     expect(view.find(node => node.type === 'a' && node.props['aria-label'] === '模型文档').props).toMatchObject({ href, target: '_blank', rel: 'noopener noreferrer' })
     expect(view.all().some(node => node.props.class === 'mtoolbar')).toBe(false)
     expect(view.all().some(node => node.props['aria-label'] === '搜索模型' && node.type === 'input')).toBe(false)
+  })
+
+  it.each([
+    ['orcarouter', 'OrcaRouter', 'https://www.orcarouter.ai/ref/ref_3f98eb2bf841638abebc'],
+    ['deepseek', '深度求索', 'https://www.deepseek.com/'],
+    ['minimax', 'MiniMax', 'https://platform.minimax.cn/'],
+    ['qwen', '阿里千问', 'https://www.qianwenai.com/'],
+    ['siliconcloud', '硅基流动', 'https://www.siliconflow.cn/'],
+    ['baichuan', '百川', 'https://www.baichuan-ai.com/'],
+    ['bailian', '阿里云百炼', 'https://www.aliyun.com/product/bailian'],
+    ['volcengine', '火山引擎(豆包)', 'https://console.volcengine.com/ark/'],
+    ['modelscope', 'modelscope魔搭', 'https://modelscope.cn/'],
+    ['tokenhub', '腾讯云TokenHub', 'https://cloud.tencent.com/product/tokenhub'],
+    ['qianfan', '百度云千帆', 'https://cloud.baidu.com/'],
+    ['xiaomimimo', 'Xiaomi Mimo', 'https://mimo.mi.com/'],
+    ['ollama', 'Ollama', 'https://ollama.com/'],
+  ])('links the %s provider name to its registration website', async (providerKey, name, href) => {
+    const view = setup(); await drain()
+    await view.click(view.row(name))
+    const link = view.find(node => node.type === 'a' && node.props['aria-label'] === `访问 ${name} 官网`)
+    expect(link.props).toMatchObject({ href, target: '_blank', rel: 'noopener noreferrer' })
+  })
+
+  it('shows the Free badge beside OrcaRouter in the provider list and active title', async () => {
+    const view = setup(); await drain()
+    expect(view.all().filter(node => node.props.class === 'free-badge')).toHaveLength(1)
+    await view.click(view.row('OrcaRouter'))
+    const badges = view.all().filter(node => node.props.class === 'free-badge')
+    expect(badges).toHaveLength(2)
+    expect(badges.every(node => node.props['aria-label'] === '免费模型')).toBe(true)
+    expect(badges.every(node => node.children.some(child => child.type === 'img' && child.props.alt === 'Free'))).toBe(true)
+  })
+
+  it.each([
+    ['智谱开放平台', 'https://open.bigmodel.cn/'],
+    ['z.ai', 'https://chat.z.ai/'],
+    ['月之暗面', 'https://www.moonshot.cn/'],
+    ['Moonshot', 'https://www.moonshot.ai/'],
+  ])('links the %s regional instance to its own website', async (name, href) => {
+    store.ensureBuiltinInstances()
+    host.preferences.modelProviderExpanded = ['glm', 'kimi']
+    const view = setup(); await drain()
+    await view.click(view.row(name, 'instance'))
+    const link = view.find(node => node.type === 'a' && node.props.href === href)
+    expect(link.props.href).toBe(href)
   })
 
   it.each([false, true])('shows each regional default once with its own documentation after legacy duplicates=%s', async legacyDuplicates => {
@@ -587,7 +642,7 @@ describe('two-level model service tree', () => {
     ;(view.row('深度求索').props.onDragstart as Function)(event)
     ;(view.row('智谱').props.onDrop as Function)(event)
     await drain()
-    expect(host.preferences.modelProviderOrder.slice(0, 2)).toEqual(['glm', 'deepseek'])
+    expect(host.preferences.modelProviderOrder.slice(0, 2)).toEqual(['orcarouter', 'glm'])
     ;(view.row('深度求索1', 'instance').props.onDragstart as Function)(event)
     ;(view.row('深度求索2', 'instance').props.onDrop as Function)(event)
     await drain()

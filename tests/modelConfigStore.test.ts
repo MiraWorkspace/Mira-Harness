@@ -25,6 +25,12 @@ afterEach(() => {
 })
 
 describe('ModelConfigStore', () => {
+  it('includes the service avatar on provider summaries for frontend model menus', () => {
+    const { store } = createStore()
+    const saved = store.save({ providerKey: 'custom', slug: 'customLogo', serviceName: '自定义服务商', serviceLogo: 'data:image/png;base64,avatar', name: '自定义服务商', endpoint: 'https://example.com/v1', models: [model('test')], enabled: true })
+    expect(store.list().find(item => item.id === saved.id)?.logo).toBe('data:image/png;base64,avatar')
+  })
+
   it('ignores retired novel roles while preserving the agent binding and its credentials', () => {
     const { store, directory } = createStore()
     const provider = store.save({ providerKey: 'custom', name: 'Provider', endpoint: 'https://example.com', apiKey: 'keep-key', models: [model('current')], enabled: true })

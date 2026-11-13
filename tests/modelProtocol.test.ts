@@ -21,6 +21,7 @@ describe('model request protocols', () => {
     ['tokenhub', '/v1', '/v1/chat/completions', '/v1/responses', '/v1/messages'],
     ['qianfan', '/v2', '/v2/chat/completions', '/v2/responses', '/anthropic/v1/messages'],
     ['xiaomimimo', '/v1', '/v1/chat/completions', '/v1/responses', '/anthropic/v1/messages'],
+    ['orcarouter', '/v1', '/v1/chat/completions', '/v1/responses', '/v1/messages'],
     ['ollama', '/v1', '/v1/chat/completions', '/v1/responses', '/v1/messages'],
   ])('resolves documented %s routes and switches supported protocols both ways', (key, base, ...paths) => {
     const identity = { providerKey: key! }
@@ -69,7 +70,7 @@ describe('model request protocols', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it.each(['siliconcloud', 'baichuan', 'bailian', 'volcengine', 'modelscope', 'tokenhub', 'qianfan', 'xiaomimimo'])('keeps the %s API version during discovery and connection tests', async key => {
+  it.each(['siliconcloud', 'baichuan', 'bailian', 'volcengine', 'modelscope', 'tokenhub', 'qianfan', 'xiaomimimo', 'orcarouter'])('keeps the %s API version during discovery and connection tests', async key => {
     const preset = MODEL_PROVIDER_PRESETS.find(item => item.key === key)!
     const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ data: [{ id: 'test-model' }] }) }))
     vi.stubGlobal('fetch', fetch)

@@ -35,7 +35,7 @@ export function MiraMobileWorkbench({ controller }: { controller: PilotControlle
   const notify = (text: string) => setToast(previous => ({ text, revision: previous.revision + 1 }))
   const blocked = () => notify('此功能需要在电脑上使用')
   const updateDraft = (id: string, patch: Partial<Draft>) => setDrafts(previous => ({ ...previous, [id]: { ...(previous[id] ?? emptyDraft()), ...patch } }))
-  const models = state.providers.flatMap(provider => provider.models.filter(model => model.enabled).map(model => ({ providerId: provider.id, providerName: provider.name, modelId: model.id, reasoning: model.reasoning, multimodal: model.multimodal })))
+  const models = state.providers.flatMap(provider => provider.models.filter(model => model.enabled).map(model => ({ providerId: provider.id, providerKey: provider.providerKey, providerSlug: provider.slug, providerName: provider.name, providerLogo: provider.logo, modelId: model.id, reasoning: model.reasoning, multimodal: model.multimodal })))
   const selectedModel = models.find(model => model.providerId === state.selection?.providerId && model.modelId === state.selection.modelId)
   const messages = projectTimelineRenderMessages(projectTimelineMessages(state.messages, state.session?.activeRun), sessionId)
   const interaction = state.session?.pendingInteraction?.status === 'waiting' ? state.session.pendingInteraction : undefined

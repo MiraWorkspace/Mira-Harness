@@ -27,6 +27,7 @@
                 <AiBrandIcon :provider="group.id" :name="group.name" :custom-logo="group.logo" :letter-avatar="!isBuiltinProvider(group)" />
               </span>
               <span class="row__name">{{ group.name }}</span>
+              <span v-if="group.id === 'orcarouter'" class="free-badge" aria-label="免费模型"><img :src="freeBadge" alt="Free"></span>
               <span class="row__slot">
                 <i v-if="groupEnabled(group)" class="dot" />
                 <button
@@ -116,7 +117,9 @@
             </span>
             <div class="panel__id">
               <div class="panel__name">
-                <span>{{ activeGroup?.name }}</span>
+                <a v-if="providerWebsiteUrl" class="panel__name-link" :href="providerWebsiteUrl" target="_blank" rel="noopener noreferrer" :aria-label="`访问 ${activeGroup?.name} 官网`" :title="`访问 ${activeGroup?.name} 官网`">{{ activeGroup?.name }}</a>
+                <span v-else>{{ activeGroup?.name }}</span>
+                <span v-if="activeGroup?.id === 'orcarouter'" class="free-badge" aria-label="免费模型"><img :src="freeBadge" alt="Free"></span>
                 <span v-if="activeGroupHasMany" class="panel__ep">{{ activeInstance.name }}</span>
               </div>
               <div class="panel__sub">
@@ -426,6 +429,8 @@ import SettingsPageShell from '../settings/components/SettingsPageShell.vue'
 import ModelCredentials from './components/ModelCredentials.vue'
 import ModelEditorDialog from './components/ModelEditorDialog.vue'
 import ModelCapabilities from './components/ModelCapabilities.vue'
+import orcaLogo from '@/asset/orca-logo-classic.png'
+import freeBadge from '@/asset/free.svg'
 
 /* =====================================================================
    服务商是固定一级节点；连接记录按共享的 Provider ID（slug）归到该服务商。
@@ -436,6 +441,7 @@ interface ProviderGroup {
   id: string
   name: string
   logo: string
+  website?: string
   providerKey: ModelProviderKey | ''
   hasInstances: boolean
   endpoint: string
@@ -444,14 +450,15 @@ interface ProviderGroup {
   instances: Instance[]
 }
 
-const PROVIDERS: { key: ModelProviderKey, name: string, endpoint: string, authMode: 'api-key' | 'none' }[] = [
-  { key: 'deepseek', name: '深度求索', endpoint: 'https://api.deepseek.com', authMode: 'api-key' },
-  { key: 'glm', name: '智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4', authMode: 'api-key' },
-  { key: 'kimi', name: '月之暗面', endpoint: 'https://api.moonshot.cn', authMode: 'api-key' },
-  { key: 'minimax', name: 'MiniMax', endpoint: 'https://api.minimaxi.com/v1', authMode: 'api-key' },
-  { key: 'qwen', name: '阿里千问', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', authMode: 'api-key' },
+const PROVIDERS: { key: ModelProviderKey, name: string, endpoint: string, authMode: 'api-key' | 'none', logo?: string, website?: string }[] = [
+  { key: 'orcarouter', name: 'OrcaRouter', endpoint: 'https://api.orcarouter.ai/v1', authMode: 'api-key', logo: orcaLogo, website: 'https://www.orcarouter.ai/ref/ref_3f98eb2bf841638abebc' },
+  { key: 'deepseek', name: '深度求索', endpoint: 'https://api.deepseek.com', authMode: 'api-key', website: 'https://www.deepseek.com/' },
+  { key: 'glm', name: '智谱', endpoint: 'https://open.bigmodel.cn/api/paas/v4', authMode: 'api-key', website: 'https://open.bigmodel.cn/' },
+  { key: 'kimi', name: '月之暗面', endpoint: 'https://api.moonshot.cn', authMode: 'api-key', website: 'https://www.moonshot.cn/' },
+  { key: 'minimax', name: 'MiniMax', endpoint: 'https://api.minimaxi.com/v1', authMode: 'api-key', website: 'https://platform.minimax.cn/' },
+  { key: 'qwen', name: '阿里千问', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', authMode: 'api-key', website: 'https://www.qianwenai.com/' },
   ...MODEL_PROVIDER_PRESETS.filter(item => ['siliconcloud', 'baichuan', 'bailian', 'volcengine', 'modelscope', 'tokenhub', 'qianfan', 'xiaomimimo'].includes(item.key)),
-  { key: 'ollama', name: 'Ollama', endpoint: 'http://127.0.0.1:11434/v1', authMode: 'none' },
+  { key: 'ollama', name: 'Ollama', endpoint: 'http://127.0.0.1:11434/v1', authMode: 'none', website: 'https://ollama.com/' },
 ]
 const BUILTIN_BY_KEY = new Map(PROVIDERS.map(item => [item.key, item]))
 const EXPANDED_KEY = 'modelProviderExpanded'
@@ -490,11 +497,11 @@ let saveTimer: number | undefined
 /* ---------- 分组 ---------- */
 const groups = computed<ProviderGroup[]>(() => {
   const definitions = new Map<string, Omit<ProviderGroup, 'instances'>>(PROVIDERS.map(preset => [preset.key, {
-    ...preset, id: preset.key, providerKey: preset.key, logo: '', hasInstances: false, protocol: 'openai-completions',
+    ...preset, id: preset.key, providerKey: preset.key, logo: preset.logo || '', hasInstances: false, protocol: 'openai-completions',
   }]))
   for (const service of services.value) {
     const preset = BUILTIN_BY_KEY.get(service.id as ModelProviderKey)
-    definitions.set(service.id, { ...service, name: preset?.name || service.name, logo: service.logo || '' })
+    definitions.set(service.id, { ...service, name: preset?.name || service.name, logo: service.logo || preset?.logo || '', website: preset?.website })
   }
   const result: ProviderGroup[] = [...definitions.values()].map(service => ({
     ...service,
@@ -512,6 +519,7 @@ const groups = computed<ProviderGroup[]>(() => {
     const ids = [...order.value]
     for (const [index, preset] of PROVIDERS.entries()) {
       if (ids.includes(preset.key)) continue
+      if (preset.key === 'orcarouter') { ids.unshift(preset.key); continue }
       const next = PROVIDERS.slice(index + 1).find(item => ids.includes(item.key))
       ids.splice(next ? ids.indexOf(next.key) : ids.length, 0, preset.key)
     }
@@ -546,6 +554,7 @@ const endpointDirty = computed(() => Boolean(defaultEndpoint.value) && form.endp
 const effectiveUrl = computed(() => supportsModelProtocol(activeProtocolProvider.value, modelProtocol(form.protocol))
   ? modelRequestUrl(form.endpoint, form.protocol, activeProtocolProvider.value) : '该服务商不支持此协议，请切换请求协议')
 const activeBuiltinPreset = computed(() => MODEL_PROVIDER_BUILTIN_INSTANCES.find(preset => activeInstance.value?.builtin && preset.providerKey === form.providerKey && preset.name === activeInstance.value.name))
+const providerWebsiteUrl = computed(() => activeBuiltinPreset.value?.website || activeGroup.value?.website)
 const modelDocsUrl = computed(() => {
   if (activeBuiltinPreset.value) return activeBuiltinPreset.value.docs
   const docs: Partial<Record<ModelProviderKey, string>> = {
@@ -562,6 +571,7 @@ const modelDocsUrl = computed(() => {
     tokenhub: 'https://cloud.tencent.com/document/product/1823/130079',
     qianfan: 'https://cloud.baidu.com/doc/qianfan/index.html',
     xiaomimimo: 'https://mimo.mi.com/docs/zh-CN/quick-start/summary/model',
+    orcarouter: 'https://www.orcarouter.ai/zh-CN/models',
     ollama: 'https://ollama.com/library',
   }
   let hostname = ''
@@ -596,8 +606,12 @@ async function load(preferId?: string) {
     const [loadedRecords, loadedServices] = await Promise.all([api.listModelProviders(), api.listModelServices()])
     records.value = loadedRecords
     services.value = loadedServices
+    const firstConfiguredGroup = groups.value.find(group => group.instances.length)
+    const firstConfiguredId = firstConfiguredGroup?.instances.find(isModelProviderAvailable)?.id
+      || firstConfiguredGroup?.instances[0]?.id
     const next = records.value.find(item => item.id === (preferId || selectedId.value))?.id
-      || records.value.find(item => isModelProviderAvailable(item))?.id
+      || firstConfiguredId
+      || records.value.find(isModelProviderAvailable)?.id
       || records.value[0]?.id
       || ''
     if (next) await selectInstance(next)
@@ -1191,6 +1205,9 @@ onMounted(() => { void load() })
 }
 .panel__id { min-width: 0; flex: 1; }
 .panel__name { display: flex; align-items: center; gap: 7px; color: var(--cp-text); font-size: var(--settings-text-section); font-weight: 550; }
+.free-badge { display: inline-flex; width: 34px; height: 16px; flex: 0 0 auto; align-items: center; overflow: hidden; border-radius: 4px; vertical-align: middle; }
+.free-badge img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.panel__name-link { color: inherit; text-decoration: none; cursor: pointer; &:hover { text-decoration: underline; text-underline-offset: 3px; } &:focus-visible { outline: 2px solid var(--cp-primary); outline-offset: 3px; border-radius: 2px; } }
 .panel__ep { padding: 1px 6px; color: var(--cp-text-secondary); background: var(--cp-bg-hover); border-radius: 4px; font-size: 11px; font-weight: 500; }
 .panel__sub {
   display: flex; align-items: center; gap: 6px; margin-top: 2px;

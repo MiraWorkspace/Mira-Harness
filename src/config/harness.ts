@@ -904,6 +904,8 @@ export interface ModelProviderSummary {
   providerKey: ModelProviderKey
   /** 用户定义的服务商标识；内置预设为其 providerKey。 */
   slug?: string
+  /** 服务商级头像；同一服务商的多个连接共享该头像。 */
+  logo?: string
   name: string
   endpoint: string
   authMode: ModelProviderAuthMode
@@ -954,13 +956,13 @@ export interface HarnessUsageStats {
   sessions: HarnessUsageBucket[]
 }
 
-export type ModelProviderKey = 'glm' | 'kimi' | 'minimax' | 'deepseek' | 'qwen' | 'siliconcloud' | 'baichuan' | 'bailian' | 'volcengine' | 'modelscope' | 'tokenhub' | 'qianfan' | 'xiaomimimo' | 'ollama' | 'custom'
+export type ModelProviderKey = 'glm' | 'kimi' | 'minimax' | 'deepseek' | 'qwen' | 'siliconcloud' | 'baichuan' | 'bailian' | 'volcengine' | 'modelscope' | 'tokenhub' | 'qianfan' | 'xiaomimimo' | 'orcarouter' | 'ollama' | 'custom'
 
 export const MODEL_PROVIDER_BUILTIN_INSTANCES = [
-  { id: 'glm-cn', providerKey: 'glm', name: '智谱开放平台', endpoint: 'https://open.bigmodel.cn/api/paas/v4', docs: 'https://open.bigmodel.cn/console/modelcenter/square' },
-  { id: 'glm-intl', providerKey: 'glm', name: 'z.ai', endpoint: 'https://api.z.ai/api/paas/v4', docs: 'https://docs.z.ai/api-reference/introduction' },
-  { id: 'kimi-cn', providerKey: 'kimi', name: '月之暗面', endpoint: 'https://api.moonshot.cn', docs: 'https://platform.kimi.com/docs/get-api-key' },
-  { id: 'kimi-intl', providerKey: 'kimi', name: 'Moonshot', endpoint: 'https://api.moonshot.ai', docs: 'https://platform.moonshot.ai/docs/' },
+  { id: 'glm-cn', providerKey: 'glm', name: '智谱开放平台', endpoint: 'https://open.bigmodel.cn/api/paas/v4', website: 'https://open.bigmodel.cn/', docs: 'https://open.bigmodel.cn/console/modelcenter/square' },
+  { id: 'glm-intl', providerKey: 'glm', name: 'z.ai', endpoint: 'https://api.z.ai/api/paas/v4', website: 'https://chat.z.ai/', docs: 'https://docs.z.ai/api-reference/introduction' },
+  { id: 'kimi-cn', providerKey: 'kimi', name: '月之暗面', endpoint: 'https://api.moonshot.cn', website: 'https://www.moonshot.cn/', docs: 'https://platform.kimi.com/docs/get-api-key' },
+  { id: 'kimi-intl', providerKey: 'kimi', name: 'Moonshot', endpoint: 'https://api.moonshot.ai', website: 'https://www.moonshot.ai/', docs: 'https://platform.moonshot.ai/docs/' },
 ] as const
 
 export function inferModelReasoning(modelId: string) {
@@ -1071,19 +1073,20 @@ export const DEFAULT_PERMISSION_CONFIG: PermissionConfig = {
 }
 
 export const MODEL_PROVIDER_PRESETS = [
-  { key: 'glm' as const, name: '智谱开放平台 / GLM', endpoint: 'https://open.bigmodel.cn/api/paas/v4', authMode: 'api-key' as const, models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-4.7', 'glm-4.6'] },
-  { key: 'kimi' as const, name: '月之暗面', endpoint: 'https://api.moonshot.cn', authMode: 'api-key' as const, models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6', 'kimi-k2.5'] },
-  { key: 'minimax' as const, name: 'MiniMax 中国版', endpoint: 'https://api.minimaxi.com/v1', authMode: 'api-key' as const, models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'] },
-  { key: 'deepseek' as const, name: '深度求索', endpoint: 'https://api.deepseek.com/v1', authMode: 'api-key' as const, models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'] },
-  { key: 'qwen' as const, name: '阿里千问 / Qwen', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', authMode: 'api-key' as const, models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'] },
-  { key: 'siliconcloud' as const, name: '硅基流动', endpoint: 'https://api.siliconflow.cn/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'baichuan' as const, name: '百川', endpoint: 'https://api.baichuan-ai.com/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'bailian' as const, name: '阿里云百炼', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'volcengine' as const, name: '火山引擎(豆包)', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', authMode: 'api-key' as const, models: [] },
-  { key: 'modelscope' as const, name: 'modelscope魔搭', endpoint: 'https://api-inference.modelscope.cn/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'tokenhub' as const, name: '腾讯云TokenHub', endpoint: 'https://tokenhub.tencentmaas.com/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'qianfan' as const, name: '百度云千帆', endpoint: 'https://qianfan.baidubce.com/v2', authMode: 'api-key' as const, models: [] },
-  { key: 'xiaomimimo' as const, name: 'Xiaomi Mimo', endpoint: 'https://api.xiaomimimo.com/v1', authMode: 'api-key' as const, models: [] },
-  { key: 'ollama' as const, name: 'Ollama 本地', endpoint: 'http://127.0.0.1:11434/v1', authMode: 'none' as const, models: ['qwen3', 'llama3.3', 'deepseek-r1', 'gemma3', 'mistral-small3.1'] },
+  { key: 'glm' as const, name: '智谱开放平台 / GLM', endpoint: 'https://open.bigmodel.cn/api/paas/v4', website: 'https://open.bigmodel.cn/', authMode: 'api-key' as const, models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-4.7', 'glm-4.6'] },
+  { key: 'kimi' as const, name: '月之暗面', endpoint: 'https://api.moonshot.cn', website: 'https://www.moonshot.cn/', authMode: 'api-key' as const, models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6', 'kimi-k2.5'] },
+  { key: 'minimax' as const, name: 'MiniMax 中国版', endpoint: 'https://api.minimaxi.com/v1', website: 'https://platform.minimax.cn/', authMode: 'api-key' as const, models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed'] },
+  { key: 'deepseek' as const, name: '深度求索', endpoint: 'https://api.deepseek.com/v1', website: 'https://www.deepseek.com/', authMode: 'api-key' as const, models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'] },
+  { key: 'qwen' as const, name: '阿里千问 / Qwen', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', website: 'https://www.qianwenai.com/', authMode: 'api-key' as const, models: ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.7-flash'] },
+  { key: 'siliconcloud' as const, name: '硅基流动', endpoint: 'https://api.siliconflow.cn/v1', website: 'https://www.siliconflow.cn/', authMode: 'api-key' as const, models: [] },
+  { key: 'baichuan' as const, name: '百川', endpoint: 'https://api.baichuan-ai.com/v1', website: 'https://www.baichuan-ai.com/', authMode: 'api-key' as const, models: [] },
+  { key: 'bailian' as const, name: '阿里云百炼', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', website: 'https://www.aliyun.com/product/bailian', authMode: 'api-key' as const, models: [] },
+  { key: 'volcengine' as const, name: '火山引擎(豆包)', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', website: 'https://console.volcengine.com/ark/', authMode: 'api-key' as const, models: [] },
+  { key: 'modelscope' as const, name: 'modelscope魔搭', endpoint: 'https://api-inference.modelscope.cn/v1', website: 'https://modelscope.cn/', authMode: 'api-key' as const, models: [] },
+  { key: 'tokenhub' as const, name: '腾讯云TokenHub', endpoint: 'https://tokenhub.tencentmaas.com/v1', website: 'https://cloud.tencent.com/product/tokenhub', authMode: 'api-key' as const, models: [] },
+  { key: 'qianfan' as const, name: '百度云千帆', endpoint: 'https://qianfan.baidubce.com/v2', website: 'https://cloud.baidu.com/', authMode: 'api-key' as const, models: [] },
+  { key: 'xiaomimimo' as const, name: 'Xiaomi Mimo', endpoint: 'https://api.xiaomimimo.com/v1', website: 'https://mimo.mi.com/', authMode: 'api-key' as const, models: [] },
+  { key: 'orcarouter' as const, name: 'OrcaRouter', endpoint: 'https://api.orcarouter.ai/v1', website: 'https://www.orcarouter.ai/ref/ref_3f98eb2bf841638abebc', authMode: 'api-key' as const, models: [] },
+  { key: 'ollama' as const, name: 'Ollama 本地', endpoint: 'http://127.0.0.1:11434/v1', website: 'https://ollama.com/', authMode: 'none' as const, models: ['qwen3', 'llama3.3', 'deepseek-r1', 'gemma3', 'mistral-small3.1'] },
   { key: 'custom' as const, name: '自定义 / Custom', endpoint: '', authMode: 'api-key' as const, models: [''] },
 ]
