@@ -36,6 +36,12 @@ Conversations, configuration, memory, and run history stay on your computer. Con
 
 ## Features
 
+### Preparing v0.1.0-beta.2
+
+This is the second beta of `0.1.0`; the source version is `0.1.0-beta.2`. Changes since Beta 1 include optional app installation and updates, Mira API 1.4 / SDK 0.4.0 support, native Workbench browsing and detached windows, resource and app storage management, and the OrcaRouter model provider. Workbench is released independently and keeps its own version number.
+
+See the [Beta 2 release notes](docs/releases/v0.1.0-beta.2.md) (Chinese) for changes, upgrade guidance, and installer acceptance requirements. Refer to the actual GitHub Release notes and assets for installer availability and signing status.
+
 ### Tasks and agent collaboration
 
 Organize conversations by project and group. Review plans, tool calls, file changes, and approval requests in the conversation. Delegate complex work to subagents running in parallel, and stop execution at any time.
