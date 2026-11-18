@@ -558,6 +558,7 @@ export interface HarnessMessageWithdrawal {
 }
 
 export interface ToolCallRecord {
+  image?: { content: string, mediaType: string, path?: string }
   /** Human-readable facts for the built-in computer control tool. */
   computerUse?: import('./miraComputerUse').MiraComputerUseStep
   id: string
@@ -1060,6 +1061,9 @@ export interface PermissionConfig {
   trashEnabled: boolean
   trashRetentionDays: number
   trashDirName: string
+  imageGenerationEnabled: boolean
+  imageGenerationProviderId?: string
+  imageGenerationModelId?: string
 }
 
 export const DEFAULT_PERMISSION_CONFIG: PermissionConfig = {
@@ -1070,6 +1074,7 @@ export const DEFAULT_PERMISSION_CONFIG: PermissionConfig = {
   trashEnabled: true,
   trashRetentionDays: 7,
   trashDirName: 'trash',
+  imageGenerationEnabled: false,
 }
 
 export const MODEL_PROVIDER_PRESETS = [

@@ -251,6 +251,7 @@ export interface PlatformApi {
   authorizeMcpServer(id: string, scope?: import('@/config/miraMcp').MiraMcpScope): Promise<import('@/config/miraMcp').MiraMcpConnection | undefined>
   getHarnessPermissionConfig(): Promise<import('@/config/harness').PermissionConfig>
   saveHarnessPermissionConfig(config: import('@/config/harness').PermissionConfig): Promise<import('@/config/harness').PermissionConfig>
+  listProviders(): Promise<import('@/config/harness').ModelProviderSummary[]>
   listHarnessTrash(projectId?: string): Promise<import('@/config/harness').HarnessTrashEntry[]>
   restoreHarnessTrash(projectId: string, token: string): Promise<void>
   bindHostedBrowser?(sessionId: string, browserId: string, guestId: number): Promise<void>

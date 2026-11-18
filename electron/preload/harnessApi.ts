@@ -29,6 +29,7 @@ export const harnessApi = {
   deleteHarnessSession: (id: string) => ipcRenderer.invoke('harness:delete-session', id),
   getHarnessPermissionConfig: () => ipcRenderer.invoke('harness:get-permission-config'),
   saveHarnessPermissionConfig: (config: unknown) => ipcRenderer.invoke('harness:save-permission-config', config),
+  listProviders: () => ipcRenderer.invoke('harness:list-providers'),
   listHarnessTrash: (projectId?: string) => ipcRenderer.invoke('harness:list-trash', projectId),
   restoreHarnessTrash: (projectId: string, token: string) => ipcRenderer.invoke('harness:restore-trash', projectId, token),
   onHarnessEvent: (listener: (event: unknown) => void) => {

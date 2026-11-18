@@ -81,4 +81,5 @@ export function registerHarnessProjectIpcHandlers({ database, miraPaths }: Harne
   ipcMain.handle('harness:get-memory-path', () => database.memories.path('global'))
   ipcMain.handle('harness:reset-memory', () => database.memories.resetGlobal())
   ipcMain.handle('harness:get-permission-config', () => database.harness.getPermissionConfig())
+  ipcMain.handle('harness:list-providers', () => database.models.list())
 }

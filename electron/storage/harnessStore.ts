@@ -1536,6 +1536,9 @@ export class HarnessStore {
         autoApproveEnabled: typeof stored.autoApproveEnabled === 'boolean' ? stored.autoApproveEnabled : DEFAULT_PERMISSION_CONFIG.autoApproveEnabled,
         fullAccessEnabled: typeof stored.fullAccessEnabled === 'boolean' ? stored.fullAccessEnabled : DEFAULT_PERMISSION_CONFIG.fullAccessEnabled,
         trashEnabled: typeof stored.trashEnabled === 'boolean' ? stored.trashEnabled : DEFAULT_PERMISSION_CONFIG.trashEnabled,
+        imageGenerationEnabled: typeof stored.imageGenerationEnabled === 'boolean' ? stored.imageGenerationEnabled : DEFAULT_PERMISSION_CONFIG.imageGenerationEnabled,
+        ...(typeof stored.imageGenerationProviderId === 'string' && stored.imageGenerationProviderId ? { imageGenerationProviderId: stored.imageGenerationProviderId } : {}),
+        ...(typeof stored.imageGenerationModelId === 'string' && stored.imageGenerationModelId ? { imageGenerationModelId: stored.imageGenerationModelId } : {}),
         globalDefaultMode,
       }
     } catch { return clone(DEFAULT_PERMISSION_CONFIG) }
@@ -1548,6 +1551,9 @@ export class HarnessStore {
       autoApproveEnabled: typeof config.autoApproveEnabled === 'boolean' ? config.autoApproveEnabled : current.autoApproveEnabled,
       fullAccessEnabled: typeof config.fullAccessEnabled === 'boolean' ? config.fullAccessEnabled : current.fullAccessEnabled,
       trashEnabled: typeof config.trashEnabled === 'boolean' ? config.trashEnabled : current.trashEnabled,
+      imageGenerationEnabled: typeof config.imageGenerationEnabled === 'boolean' ? config.imageGenerationEnabled : current.imageGenerationEnabled,
+      ...(typeof config.imageGenerationProviderId === 'string' && config.imageGenerationProviderId ? { imageGenerationProviderId: config.imageGenerationProviderId } : {}),
+      ...(typeof config.imageGenerationModelId === 'string' && config.imageGenerationModelId ? { imageGenerationModelId: config.imageGenerationModelId } : {}),
       trashRetentionDays: Number.isInteger(config.trashRetentionDays) && config.trashRetentionDays >= 1 && config.trashRetentionDays <= 30
         ? config.trashRetentionDays
         : current.trashRetentionDays,

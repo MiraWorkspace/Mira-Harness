@@ -33,6 +33,16 @@
             <el-option label="引导" value="guide" />
           </el-select>
         </div>
+        <div class="settings-row">
+          <div class="settings-row__copy"><span class="settings-row__label">允许对话生成图片</span><span class="settings-row__hint">允许 Mira 在执行任务时调用图片模型，并将结果保存到当前工作目录。</span></div>
+          <el-switch :model-value="config.imageGenerationEnabled" :loading="permissionSaving" :disabled="!permissionConfigLoaded" aria-label="允许对话生成图片" @update:model-value="setImageGenerationEnabled" />
+        </div>
+        <div v-if="config.imageGenerationEnabled" class="settings-row">
+          <div class="settings-row__copy"><span class="settings-row__label">图片生成模型</span><span class="settings-row__hint">只显示模型类型为“图片”的已启用模型；生成时按 OpenAI 兼容格式调用图片接口。</span></div>
+          <el-select class="send-shortcut-picker" :model-value="imageModelValue" :disabled="!permissionConfigLoaded || permissionSaving" aria-label="图片生成模型" placeholder="选择图片模型" @update:model-value="setImageModel">
+            <el-option v-for="item in imageModels" :key="`${item.providerId}/${item.modelId}`" :label="`${item.providerName} / ${item.modelName || item.modelId}`" :value="`${item.providerId}/${item.modelId}`" />
+          </el-select>
+        </div>
       </div>
     </section>
     <section class="general-settings" aria-labelledby="permission-heading">
@@ -71,7 +81,7 @@
 
 <script setup lang="ts">
 import { onBeforeRouteLeave } from 'vue-router'
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { miraShortcutLabel } from '@/platform/workbenchShortcuts'
 import type { PermissionMode, SendShortcut } from '@/config/harness'
 import { resolveComposerFollowupMode } from '@/config/composerPreferences'
@@ -80,6 +90,8 @@ import { HARNESS_PERMISSION_OPTIONS } from '@/config/harnessPermissions'
 import { usePermissionSettings } from '../settings/usePermissionSettings'
 import { useSettingsPreference } from '../settings/useSettingsPreference'
 import SettingsPageShell from '../settings/components/SettingsPageShell.vue'
+import { getPlatformApi } from '@/platform'
+import type { ModelProviderSummary } from '@/config/harness'
 
 const { saving, save } = useSettingsPreference()
 const { config, loaded: permissionConfigLoaded, saving: permissionSaving, error: permissionError, load: loadPermissions, save: savePermission } = usePermissionSettings()
@@ -87,11 +99,17 @@ const followupSaving = computed(() => saving.value === 'followupMode')
 const showContextUsage = computed(() => getPreference('showContextUsage', true))
 const sendShortcut = computed<SendShortcut>(() => getPreference<SendShortcut>('sendShortcut', 'enter') === 'mod-enter' ? 'mod-enter' : 'enter')
 const followupMode = computed(() => resolveComposerFollowupMode(getPreference('followupMode', 'queue')))
+const providers = ref<ModelProviderSummary[]>([])
+const imageModels = computed(() => providers.value.flatMap(provider => provider.enabled ? provider.models.filter(model => model.enabled && model.modelType === 'image').map(model => ({ providerId: provider.id, providerName: provider.name, modelId: model.id, modelName: model.name })) : []))
+const imageModelValue = computed(() => config.imageGenerationProviderId && config.imageGenerationModelId ? `${config.imageGenerationProviderId}/${config.imageGenerationModelId}` : '')
 function setShowContextUsage(value: boolean) { void save('showContextUsage', value) }
 function setSendShortcut(value: string) { void save('sendShortcut', value === 'enter' ? 'enter' : 'mod-enter') }
 function setFollowupMode(value: string) { if (value === 'queue' || value === 'guide') void save('followupMode', value) }
 function setGlobalDefaultMode(mode: PermissionMode) { void savePermission({ globalDefaultMode: mode }) }
 function setPermissionAvailability(key: 'autoApproveEnabled' | 'fullAccessEnabled', enabled: boolean) { void savePermission({ [key]: enabled }) }
+function setImageGenerationEnabled(value: boolean) { void savePermission({ imageGenerationEnabled: value }) }
+function setImageModel(value: string) { const slash = value.indexOf('/'); if (slash > 0) void savePermission({ imageGenerationProviderId: value.slice(0, slash), imageGenerationModelId: value.slice(slash + 1) }) }
+onMounted(async () => { try { providers.value = (await getPlatformApi()?.listProviders()) || [] } catch {} })
 onBeforeRouteLeave(() => !saving.value && !permissionSaving.value)
 </script>
 

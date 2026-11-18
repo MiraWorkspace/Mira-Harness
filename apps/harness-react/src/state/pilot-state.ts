@@ -863,7 +863,16 @@ export class PilotController {
     await this.refreshSession(id, generation, true, true)
     if (generation !== this.generation || id !== this.activeSessionId) return
     const revision = this.permissionRevision
-    const [pending, queue] = await Promise.all([this.host.listPendingPermissions(id), this.host.getMessageQueue?.(id)])
+    let pending: HarnessPermissionRequest[], queue: HarnessMessageQueueSnapshot | undefined
+    try {
+      ;[pending, queue] = await Promise.all([this.host.listPendingPermissions(id), this.host.getMessageQueue?.(id)])
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('未找到会话')) {
+        if (generation === this.generation && id === this.activeSessionId) this.update({ session: undefined, queue: undefined, permission: undefined })
+        return
+      }
+      throw error
+    }
     if (generation !== this.generation || id !== this.activeSessionId) return
     if (queue) this.applyQueue(queue)
     if (revision !== this.permissionRevision) return

@@ -24,7 +24,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { isMiraPluginId, parseMiraPluginInvocation } from '../../src/config/miraPlugins'
 import { miraPluginPromptIds } from '../storage/miraPluginStore'
 import { MIRA_RESERVED_PROMPT_COMMANDS, parseMiraPromptCommandInvocation } from '../../src/config/miraPromptCommands'
-import { DEFAULT_CONTEXT_WINDOW, isModelProviderAvailable, normalizeAssistantTone, normalizeAutoTitle, normalizePlanSteps, providerModel, resolveMiraIdentity, shouldAutoCompactContext, shouldGenerateAutoTitle, type HarnessContextUsage, type HarnessEvent, type HarnessFileReference, type HarnessMessage, type HarnessMessagePart, type HarnessRunActivity, type HarnessRunSummary, type HarnessSession, type HarnessSource, type HarnessSubtaskRole, type HarnessTokenUsage, type ModelSelection, type PermissionMode, type HarnessUserAnswer, type ToolCallRecord } from '../../src/config/harness'
+import { DEFAULT_CONTEXT_WINDOW, isModelProviderAvailable, normalizeAssistantTone, normalizeAutoTitle, normalizePlanSteps, providerModel, resolveMiraIdentity, shouldAutoCompactContext, shouldGenerateAutoTitle, type HarnessContextUsage, type HarnessEvent, type HarnessFileReference, type HarnessMessage, type HarnessMessagePart, type HarnessRunActivity, type HarnessRunSummary, type HarnessSession, type HarnessSource, type HarnessSubtaskRole, type HarnessTokenUsage, type ModelSelection, type PermissionMode, type HarnessUserAnswer, type ToolCallRecord, type ModelProviderSummary, type ProviderModelConfig } from '../../src/config/harness'
 import type { PlatformDatabase } from '../storage/database'
 import { buildMiraSystemPrompt, type MiraEnvironmentContext } from '../prompts/mira-system-prompt'
 import { PLANNING_MODE_SECTION, UNATTENDED_RUN_SECTION, WEB_CITATIONS_SECTION, executingPlanSection } from '../prompts/mira-sections'
@@ -74,6 +74,7 @@ import type { MiraFlowReview } from '../../src/config/miraFlowReview'
 import { parseMiraPresentationReferences } from '../../src/config/miraPresentation'
 import { assertMiraPresentationReferences } from './miraPresentationReferences'
 import { MIRA_MODEL_ERROR_MESSAGE, type MiraModelError } from '../../src/config/miraModelErrors'
+import { generateImage } from './imageGeneration'
 
 export { parseMemoryExtraction }
 
@@ -1163,7 +1164,7 @@ export class HarnessRuntime {
   pluginMcpStatus(sessionId: string, serverId: string) { return this.pluginMcpConnections.get(sessionId)?.getStatus(serverId) }
   projectMcpStatus(sessionId: string, serverId: string) { return this.projectMcpConnections.get(sessionId)?.getStatus(serverId) }
 
-  private tools(sender: WebContents | undefined, sessionId: string, options: { role?: HarnessSubtaskRole, subtaskId?: string, planning?: boolean, runId?: string, toolScope?: () => number | string, toolCallIndex?: () => number, onTool?: (id: string) => void, secrets?: string[], pluginShell?: boolean, assertPluginShell?: () => void, hooks?: HarnessHooks, pluginMcp?: HarnessPluginMcp, mcpTools?: any[], supportsImages?: boolean, allowBackground?: boolean, commandNotice?: { selection: ModelSelection; permissionMode: PermissionMode }, workflow?: { selection: ModelSelection; permissionMode: PermissionMode; signal: AbortSignal; inputId: string; contractLoaded: boolean; assertCurrent(): void } } = {}) {
+  private tools(sender: WebContents | undefined, sessionId: string, options: { role?: HarnessSubtaskRole, subtaskId?: string, planning?: boolean, runId?: string, toolScope?: () => number | string, toolCallIndex?: () => number, onTool?: (id: string) => void, secrets?: string[], pluginShell?: boolean, assertPluginShell?: () => void, hooks?: HarnessHooks, pluginMcp?: HarnessPluginMcp, mcpTools?: any[], supportsImages?: boolean, allowBackground?: boolean, commandNotice?: { selection: ModelSelection; permissionMode: PermissionMode }, imageGeneration?: { provider: ModelProviderSummary; model: ProviderModelConfig; apiKey: string }, workflow?: { selection: ModelSelection; permissionMode: PermissionMode; signal: AbortSignal; inputId: string; contractLoaded: boolean; assertCurrent(): void } } = {}) {
     const descriptors = new Map<string, ToolDescriptor>()
     const recordedTools = new Map<string, { tool: string, target: string, startedAt: number }>()
     const executionRecord = new AsyncLocalStorage<string>()
@@ -1297,7 +1298,10 @@ export class HarnessRuntime {
       if (status === 'cancelled' || status === 'ok' || status === 'failed') return status
       const output = publicOutput(result)
       const terminalStatus = stopped ? 'cancelled' : isError ? 'failed' : 'ok'
-      updatePublic(id, { status: terminalStatus, ...(output ? { output } : {}), ...(stopped || isError ? { error: stopped ? '运行已停止' : output?.text || '工具执行失败' } : {}), completedAt: Date.now() })
+      const details = result && typeof result === 'object' && 'details' in result ? (result as any).details : undefined
+      const directImage = result && typeof result === 'object' && 'image' in result ? (result as any).image : undefined
+      const image = directImage?.content && directImage?.mediaType ? directImage : details?.content && details?.mediaType ? { content: details.content, mediaType: details.mediaType, ...(details.path ? { path: details.path } : {}) } : undefined
+      updatePublic(id, { status: terminalStatus, ...(output ? { output } : {}), ...(image ? { image } : {}), ...(stopped || isError ? { error: stopped ? '运行已停止' : output?.text || '工具执行失败' } : {}), completedAt: Date.now() })
       return terminalStatus
     }
     const cancelPending = (reason: string) => {
@@ -1455,7 +1459,18 @@ export class HarnessRuntime {
     const planningTools = this.planCoordinator.createTools(sender, sessionId)
     const askUserTool = register(planningTools.askUserTool, { risk: 'read', title: () => '', detail: () => '' })
     const presentPlanTool = register(planningTools.presentPlanTool, { risk: 'read', title: () => '', detail: () => '' })
+    const imageTool = options.imageGeneration && !options.planning && !options.role && !options.subtaskId ? register({
+      name: 'generate_image', label: '生成图片', description: '使用已配置的图片模型生成一张图片并保存到当前工作目录。仅在用户需要图片或任务明确需要视觉素材时调用。',
+      parameters: Type.Object({ prompt: Type.String({ minLength: 1, maxLength: 10000 }), size: Type.Optional(Type.String({ maxLength: 32 })) }), executionMode: 'sequential',
+      execute: async (_id: string, input: { prompt: string; size?: string }, signal?: AbortSignal) => {
+        const cwd = session().workingDirectory
+        if (!cwd) throw new Error('生成图片需要先选择工作目录。')
+        const result = await generateImage(options.imageGeneration!.provider, options.imageGeneration!.model, options.imageGeneration!.apiKey, cwd, input.prompt, { size: input.size, signal })
+        return { content: [{ type: 'text', text: `图片已生成，图片结果已直接展示；文件已保存到 ${result.path}。` }, { type: 'image', data: result.content, mimeType: result.mediaType }], image: { content: result.content, mediaType: result.mediaType, path: result.path }, details: result }
+      },
+    }, { risk: 'write', title: () => '允许 Mira 生成图片？', detail: args => String((args as any).prompt || '') }) : undefined
     const allTools = [
+      ...(imageTool ? [imageTool] : []),
       readTool,
       editTool,
       listFilesTool,
@@ -2477,7 +2492,11 @@ export class HarnessRuntime {
           this.assertGitAdmission(sessionId)
         },
       } : undefined
-      registeredTools = this.tools(sender, sessionId, { planning: options.planning, runId, toolScope, onTool: appendToolPart, secrets: [apiKey], hooks, mcpTools: selectedMcpTools, supportsImages: supportsHarnessImages(modelConfig), workflow, allowBackground: origin !== 'automation', ...(sender && origin === 'manual' ? { commandNotice: { selection: { ...selection }, permissionMode: options.permissionMode ?? session.permissionMode } } : {}) })
+      const imageConfig = this.database.harness.getPermissionConfig()
+      const imageProvider = imageConfig.imageGenerationEnabled && imageConfig.imageGenerationProviderId ? this.database.models.get(imageConfig.imageGenerationProviderId) : undefined
+      const imageModel = imageProvider && imageConfig.imageGenerationModelId ? providerModel(imageProvider, imageConfig.imageGenerationModelId) : undefined
+      const imageGeneration = imageProvider && imageModel && imageModel.modelType === 'image' && imageModel.enabled ? { provider: imageProvider, model: imageModel, apiKey: this.database.models.getSecret(imageProvider.id) } : undefined
+      registeredTools = this.tools(sender, sessionId, { planning: options.planning, runId, toolScope, onTool: appendToolPart, secrets: [apiKey, ...(imageGeneration?.apiKey ? [imageGeneration.apiKey] : [])], hooks, mcpTools: selectedMcpTools, supportsImages: supportsHarnessImages(modelConfig), imageGeneration, workflow, allowBackground: origin !== 'automation', ...(sender && origin === 'manual' ? { commandNotice: { selection: { ...selection }, permissionMode: options.permissionMode ?? session.permissionMode } } : {}) })
       const preferences = this.database.getSnapshot().preferences
       const commandSkillIds = !options.planning && !options.goalContinuation && !options.backgroundCommands && input.command && 'scope' in input.command ? input.command.requiredSkillIds || [] : []
       if (commandSkillIds.length) this.assertPromptCommand(session, input.content, input.command!, !options.planning)

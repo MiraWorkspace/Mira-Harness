@@ -1,4 +1,4 @@
-import { ArrowUpRight, Bot, Check, ChevronRight, CircleAlert, FilePlus2, FileText, FolderOpen, Globe2, LoaderCircle, Monitor, Pencil, Search, Square, TerminalSquare, Wrench } from 'lucide-react'
+import { ArrowUpRight, Bot, Check, ChevronRight, CircleAlert, FilePlus2, FileText, FolderOpen, Globe2, LoaderCircle, Monitor, Pencil, Search, Square, TerminalSquare, Wrench, X } from 'lucide-react'
 import * as Collapsible from '@radix-ui/react-collapsible'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { HarnessRunActivity, HarnessRunSummary, HarnessSubtask, ToolCallRecord } from '../../../../../src/config/harness'
@@ -186,7 +186,9 @@ export function ToolRecord({ tool, onOpenFile, onOpenCommand, hideIcon = false }
       {lightweight ? <Collapsible.Trigger asChild><button type="button" className="mira-tool-record-action" data-tool-record-toggle aria-label={`${expanded ? '收起' : '查看'}${toolLabel}调用记录`} title={`${expanded ? '收起' : '查看'}调用记录`}><ChevronRight size={14} className="mira-tool-chevron" aria-hidden="true" /></button></Collapsible.Trigger> : <ChevronRight size={16} className="mira-tool-chevron" aria-hidden="true" />}
     </div>
   return <Collapsible.Root className="mira-tool-record" open={expanded} onOpenChange={setExpanded} data-tool-call-id={tool.id} data-tool-status={status}>
+    {tool.tool === 'generate_image' && status === 'running' && <div className="mira-generated-image-loading" role="status"><div className="mira-generated-image-skeleton" /><span>正在生成图片…</span></div>}
     {lightweight ? summary : <Collapsible.Trigger asChild>{summary}</Collapsible.Trigger>}
+    {tool.tool === 'generate_image' && tool.image && <ImageToolPreview image={tool.image} />}
     {expanded && <Collapsible.Content className="mira-tool-content">{tool.tool === 'bash' ? <MiraToolCommand key={JSON.stringify([tool.runId, tool.id])} tool={tool} /> : <>
       {tool.computerUse?.steps?.length ? <section className="mira-tool-payload" aria-label="电脑操作步骤"><strong>操作步骤（计划顺序，执行结果见输出）</strong><ol className="list-decimal pl-5">{tool.computerUse.steps.map((step, index) => <li key={index}>{step}</li>)}</ol></section> : null}
       {fileDiff ? <><MiraToolDiff diff={fileDiff} path={filePath ?? tool.target} identity={JSON.stringify([tool.runId, tool.id])} />{(tool.input || tool.output) && <details className="mira-command-parameters mt-2"><summary>查看调用记录</summary>{payload}</details>}</> : <>{tool.target && <p className="mira-tool-target">{tool.target}</p>}{payload}</>}
@@ -196,4 +198,10 @@ export function ToolRecord({ tool, onOpenFile, onOpenCommand, hideIcon = false }
       {!tool.output && !tool.diff && !tool.error && !skipped && <p>{tool.status === 'running' ? '工具正在执行。' : tool.status === 'waiting-confirm' ? '等待权限确认。' : tool.status === 'cancelled' ? '工具调用已取消，未记录执行结果。' : tool.status === 'failed' ? '工具执行失败，当前记录未提供错误详情。' : '工具执行已完成，当前记录未提供输出详情。'}</p>}
     </>}</Collapsible.Content>}
   </Collapsible.Root>
+}
+
+export function ImageToolPreview({ image }: { image: NonNullable<ToolCallRecord['image']> }) {
+  const [open, setOpen] = useState(false)
+  const source = `data:${image.mediaType};base64,${image.content}`
+  return <><button type="button" className="mira-generated-image-card" aria-label="预览生成的图片" onClick={() => setOpen(true)}><img src={source} alt="生成的图片" /></button>{open && <div className="mira-generated-image-lightbox" role="dialog" aria-label="生成图片预览" onClick={() => setOpen(false)}><button type="button" aria-label="关闭图片预览" onClick={event => { event.stopPropagation(); setOpen(false) }}><X size={18} /></button><img src={source} alt="生成的图片" onClick={event => event.stopPropagation()} /></div>}</>
 }

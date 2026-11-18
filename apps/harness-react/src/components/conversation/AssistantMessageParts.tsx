@@ -3,7 +3,7 @@ import { Brain, ChevronRight, ShieldCheck } from 'lucide-react'
 import type { HarnessMessage, HarnessMessagePart, HarnessPermissionRequest, HarnessSubtask, ToolCallRecord } from '../../../../../src/config/harness'
 import { MiraQueuedSummary, MiraStreamEntrance } from './MiraStreamMotion'
 import { MessageMarkdown } from './markdown'
-import { MiraSubtaskRecord, ToolRecord } from './run-progress'
+import { ImageToolPreview, MiraSubtaskRecord, ToolRecord } from './run-progress'
 import { useMiraConversationDetail } from './MiraConversationDetails'
 import { taskFindTargetKey } from '../../lib/conversation-find'
 import { miraAssistantWorkItems } from '../../lib/tool-exploration'
@@ -112,6 +112,7 @@ export function AssistantMessageParts({ message, toolsById, streaming = false, p
     const { part, tool } = item
     if (hasPlan && tool?.tool === 'set_plan' && tool.status === 'ok') return null
     const child = tool?.tool === 'delegate_task' ? subtaskForTool?.(tool.id) : undefined
+    if (tool?.tool === 'generate_image') return <MiraStreamEntrance key={part.id} identity={`${rendererId}:${part.id}`} active={streaming}><GeneratedImagePart tool={tool} /></MiraStreamEntrance>
     return <MiraStreamEntrance key={part.id} identity={`${rendererId}:${part.id}`} active={streaming && part.type !== 'text'}><div className="mira-assistant-part" data-message-part-id={part.id} data-message-part-type={part.type} data-mira-find-target={part.type === 'text' ? taskFindTargetKey(rendererId, part.id) : undefined}>
       {part.type === 'text' ? <div data-mira-selectable="assistant" data-mira-selection-region={part.id}><MessageMarkdown content={part.text} sources={message.sources} streaming={streaming && part.state === 'streaming'} /></div> : part.type === 'reasoning' ? <AssistantReasoning part={part} memoryKey={JSON.stringify(['reasoning', message.runId ?? message.id, part.id])} /> : <>
         {child && onOpenSubtask ? <MiraSubtaskRecord key={child.id} subtask={child} onOpen={() => onOpenSubtask(child.id)} onStop={onStopSubtask ? () => onStopSubtask(child.id) : undefined} /> : tool?.tool === 'create_workflow' && tool.status === 'ok' ? <MiraWorkflowToolSummary tool={tool} run={workflowRuns?.find(run => run.toolCallId === tool.id)} onOpen={onOpenWorkflow} /> : tool ? <ToolRecord tool={tool} onOpenFile={onOpenFile} onOpenCommand={onOpenCommand} /> : <p className="mira-tool-missing" role="status">工具记录暂不可用。</p>}
@@ -119,4 +120,11 @@ export function AssistantMessageParts({ message, toolsById, streaming = false, p
       </>}
     </div></MiraStreamEntrance>
   })}</div>
+}
+
+function GeneratedImagePart({ tool }: { tool: ToolCallRecord }) {
+  if (tool.image) return <ImageToolPreview image={tool.image} />
+  if (tool.status === 'running' || tool.status === 'waiting-confirm') return <div className="mira-generated-image-loading mira-generated-image-loading--assistant" role="status"><div className="mira-generated-image-skeleton" /><div className="mira-generated-image-decoding"><span className="mira-generated-image-dots" /><span>正在生成图片…</span></div></div>
+  if (tool.error) return <p className="mira-tool-error" role="alert">{tool.error}</p>
+  return null
 }
